@@ -1,10 +1,3 @@
--- Versão: 0.9.2a (remoção do botão de idioma no cabeçalho)
--- Mudanças 0.9.2a:
--- - Removido botão de idioma do menu (cabeçalho).
--- - Seleção de idioma aparece somente no início (Lang.alwaysPrompt = true).
--- - Comando /uu lang permanece para reabrir seletor (remova se não quiser).
--- Demais funcionalidades iguais à 0.9.2 (painel Sprint ainda removido).
-
 local VERSION = "0.9.2a"
 
 -- ==== Serviços ====
