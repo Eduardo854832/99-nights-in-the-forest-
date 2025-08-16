@@ -1,6 +1,37 @@
-# Atualizações (0.1.0 → 0.6.2)
+# Atualizações (0.1.0 → 0.8.0)
 
 Resumo organizado das mudanças entre as versões.
+
+---
+
+## 0.8.0 - Phase 1 High-Impact Enhancements
+Adicionado
+- **Idempotent initialization**: Script agora limpa execuções anteriores automaticamente (`UniversalUtility_UI`, `UU_LangSelect`, `UU_Overlay`).
+- **Maid (resource manager)**: Sistema automático de limpeza de conexões/instâncias para facilitar hot-reload e modularidade futura.
+- **Throttled persistence writes**: Gravações em disco agrupadas a cada 0.5s, apenas para chaves alteradas (`Persist.setIfChanged`).
+- **Central Metrics scheduler**: Loop único RenderStepped alimentando overlay + painel stats, removendo loops duplicados de FPS/mem/ping.
+- **Translation system caching**: Cache de traduções + fallback + log de chaves ausentes em `Lang.missing`.
+- **Fly controller smoothing**: Lerp de velocidade + uso opcional de `AlignVelocity` se disponível, com fallback gracioso.
+- **Consolidated camera update loop**: Shiftlock, smooth, sensitivity integrados ao heartbeat central.
+- **Noclip optimization**: Rastreamento incremental de descendentes do character ao invés de scan completo por frame.
+- **Command spam debounce**: Debounce de 0.25s para comandos `/uu` + sanitização de input (máx 32 chars por token).
+- **Export/Import config**: Botões e comandos para cópia/cola de configuração via clipboard.
+- **Panic reset command**: `/uu panic` desabilita fly, noclip, tempo custom, overlay e reseta câmera rapidamente.
+- **Public API `_G.UniversalUtility`**: Hooks expostos para plugins futuros (`RegisterCommand`, `RegisterPanelLazy`, `OnLanguageChanged`, `GetState`, `AddMetricsObserver`).
+- **Defensive checks & safe wrappers**: Operações de humanoid e câmera protegidas por pcall.
+- **Reduced heartbeat frequency**: Updates de baixa prioridade (ex: label de posição) reduzidos para ~8 Hz.
+
+Alterado
+- **Services lazy loading**: Sistema de serviços com lazy loading via metatable.
+- **Unified overlay + stats text source**: Mudança de intervalo de overlay atualiza variável ao invés de reconectar loops.
+- **Configuration versioning**: JSON salvo inclui `_configVersion` para compatibilidade futura.
+- **Language system improvements**: Suporte para Español, cache melhorado, fallback para EN.
+- **UI architecture**: Sistema modular de painéis com tradução dinâmica.
+
+Corrigido
+- **Memory optimization**: Redução significativa de loops redundantes.
+- **Resource management**: Todas as conexões/instâncias registradas no GlobalMaid.
+- **Persistence reliability**: Sistema de flush throttled evita escritas excessivas.
 
 ---
 
