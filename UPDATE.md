@@ -4,6 +4,38 @@ Histórico de mudanças do projeto (versões mais recentes primeiro).
 
 ---
 
+## 0.9.1
+Adicionado
+- Comando `/uu diag` para diagnóstico rápido (FPS, Mem, Ping, Players, estados de features) em notificação + logger.
+- Chave de tradução `LEGACY_FLY_NOTE` (pt/en) e chave `DIAG_MESSAGE`.
+- Sistema de Fly modernizado: tenta `LinearVelocity` + `AlignOrientation`; fallback automático para `BodyVelocity` legado.
+- Registry de conexões internas (Core.Bind/Unbind/UnbindAll) permitindo limpeza central (usado pelo Panic).
+- Dirty flag no Logger (painel Debug só reconcatena texto quando há novos logs).
+- Restauração de WalkSpeed base ao desativar Sprint; tracking de última velocidade aplicada.
+
+Alterado
+- Overlay e painel de stats agora compartilham o mesmo estado de métricas (ciclo único de coleta 1x/s).
+- Sprint passa a usar valores em `Core._state` ao invés de reconsultar persistência a cada ciclo.
+- Panic reforçado: desativa sprint, overlay, fly, noclip, hora custom e limpa conexões registradas.
+- Tema reaplicado após troca de idioma para garantir coloração de novos elementos.
+- Fly loop migrado para única conexão Heartbeat registrada no registry.
+- Texto de versão atualizado para `0.9.1` (UI título e notificação inicial).
+
+Corrigido
+- Precedência lógica em `UI.applyLanguage` (TextButton sem parent podia ser processado). Adicionados parênteses.
+- Evita writes redundantes em Humanoid (Sprint e Fly) — só aplica quando valor muda.
+
+Removido
+- Cálculo duplicado de FPS/Mem/Ping no overlay (agora reutiliza métricas centrais).
+
+Interno
+- `Themes._current` referencia tema ativo para acesso imediato em novos elementos.
+- Mais usos de `pcall` para evitar interrupções (writes de propriedades e criação de constraints de voo).
+- Comentários marcados com `-- [v0.9.1]` para rastreabilidade de mudanças.
+- Estrutura preparada para futura modularização sem quebrar API existente.
+
+---
+
 ## 0.9.0
 Adicionado
 - Lazy loading de painéis (constroem só ao primeiro expandir).
