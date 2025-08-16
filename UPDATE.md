@@ -1,6 +1,72 @@
-# Atualizações (0.1.0 → 0.6.2)
+# Atualizações (0.1.0 → 0.9.0)
 
 Resumo organizado das mudanças entre as versões.
+
+---
+
+## 0.9.0
+Adicionado
+- Lazy loading de painéis (carregam só ao expandir a primeira vez).
+- Sistema de temas (dark / light) com persistência e comando `/uu theme`.
+- Gerenciador de keybinds (menuToggle, flyToggle, panic, overlayToggle) – reconfigurável via UI e `/uu keybind`.
+- Perfis (1..3) salvando WalkSpeed, JumpPower, FOV, sensibilidade, shift‑lock, câmera suave, velocidades de voo, overlay (visibilidade) – comandos `/uu profile save|load <n>`.
+- Auto Sprint configurável (toggle + bônus + tempo de hold) e comando `/uu sprint`.
+- Histórico de teleporte (últimos 5 TPs) separado das posições salvas.
+- Logger de depuração com export ( `/uu debug` ).
+- Painel de chaves de idioma faltantes (se existirem).
+- API pública expandida: `RegisterLazyPanel`, `RegisterCommand`, `RegisterKeybind`, `Log`, `PanicAll`.
+- Comandos novos: `theme`, `profile`, `keybind`, `sprint`, `debug` (além dos anteriores).
+
+Alterado
+- Export agora força flush de persistência antes de copiar.
+- Panic também desativa sprint, overlay, fly, noclip e hora custom.
+- Sprint não interfere em modo fly; velocidades aplicadas com consciência de estado.
+- Clamping de FOV (30–130) em load e alteração.
+- Organização de código em blocos (temas, logger, perfis, keybinds) mantendo arquitetura da Fase 1.
+
+Corrigido
+- Evita rebind acidental durante captura de tecla (ignora input gameProcessed).
+- Garantia de não duplicar construção de painel (flag built) no lazy load.
+
+Removido
+- Necessidade de reconstruir toda a UI para trocar tema (agora via recolor dinâmico).
+
+Interno
+- Registro central de elementos para tema (ThemeRegistry) e tradução (translatables).
+- Reutilização de observer único de métricas para sprint, overlay e painel de stats.
+- Logger limita a 150 linhas (FIFO) para evitar crescimento infinito.
+
+---
+
+## 0.8.0
+(Refatoração Arquitetural – "Fase 1")
+
+Adicionado
+- Scheduler único de métricas (FPS, Mem, Ping, Players) eliminando loops duplicados.
+- `Maid` para gerenciamento e limpeza de conexões / instâncias (suporte a reexecução segura).
+- Comando `/uu panic` (desativa rapidamente recursos principais).
+- Export / Import de configuração (clipboard) + versão de schema `_configVersion`.
+- API pública inicial: `RegisterCommand`, `AddMetricsObserver`, `GetState`.
+- Cache e fallback robusto de traduções com detecção de chaves faltantes.
+
+Alterado
+- Fly suavizado: AlignVelocity + Lerp de velocidade; transição mais estável.
+- Overlay e painel de stats consomem a mesma fonte de dados (observer central).
+- Persistência com gravação em lote (flush ~0.5s) e `setIfChanged` para evitar writes redundantes.
+- Atualização de posição do jogador reduzida (~8–10 Hz) em vez de a cada frame.
+- Inicialização idempotente destruindo GUIs anteriores (evita instâncias duplicadas).
+- Câmera (shift‑lock, smooth, sensibilidade) unificada no mesmo loop de métricas.
+
+Corrigido
+- Condições de race ao recriar câmera (FOV reaplicado com segurança).
+- Possíveis múltiplas conexões ao reexecutar o script (limpas pelo Maid).
+
+Removido
+- Loops separados de atualização para overlay / stats / posição.
+
+Interno
+- Estrutura de módulos lógicos (Persist, MetricsService, Fly, UI, Lang, Util) separada conceitualmente.
+- Funções auxiliares de safe notify e acesso a humanoide centralizados.
 
 ---
 
