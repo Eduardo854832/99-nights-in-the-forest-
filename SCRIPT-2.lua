@@ -1,18 +1,3 @@
--- Universal Utility (Phase 1 / 0.9.1)
--- Changelog 0.9.1 (marcado com -- [v0.9.1]):
--- * Corrigido bug de precedência lógica em UI.applyLanguage.
--- * Adicionada chave de tradução LEGACY_FLY_NOTE em pt/en.
--- * Logger otimizado com dirty flag (painel Debug só atualiza quando há novas entradas).
--- * Unificação de métricas (overlay e painel Stats usam o mesmo estado).
--- * Sprint usa Core._state (sprintBonus) e restaura WalkSpeed original quando desativa; evita writes redundantes.
--- * Registry de conexões Core (Bind/Unbind/UnbindAll) e Panic desmonta features dinâmicas.
--- * Fly modernizado: tenta LinearVelocity + AlignOrientation; fallback para BodyVelocity se falhar.
--- * Comando /uu diag para diagnóstico rápido.
--- * Tema: Themes.apply mantém referência Themes._current e reaplica após troca de idioma.
--- * Melhoria em Panic: desativa overlay, fly, noclip, sprint e limpa conexões.
--- * Overlay agora atualiza só quando métricas colhidas mudam (1x/s).
--- * Diversos pcall defensivos e notas de trace (-- [v0.9.1]).
-
 local VERSION = "0.9.1"
 
 -- ==== Serviços ====
