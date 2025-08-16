@@ -1,6 +1,6 @@
 --[[
 Universal Client Utility (Advanced UI) v0.2.0
-Autor: (adicione seu nome)
+Autor: (Eduardo854832)
 Descrição: Utilidades client-side (PC + Mobile) com UI avançada (tabs, minimizar, persistência opcional).
 Foco: Performance overlay, ajustes de movimento/câmera, exibição de leaderstats, ajustes de FOV, etc.
 Não inclui: Ações sobre outros jogadores ou exploração de remotos.
