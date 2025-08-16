@@ -644,6 +644,325 @@ registerCommand("reload", "Reload config", function()
 end)
 
 --------------------------------------------------
+-- UI (estrutura principal + tradução dinâmica)
+--------------------------------------------------
+local UI = { translatables = {}, panels = {}, built = false }
+
+local function mark(instance, key)
+    table.insert(UI.translatables, {instance=instance, key=key})
+end
+
+function UI.applyLanguage()
+    for _, t in ipairs(UI.translatables) do
+        if t.instance and t.instance.Parent then
+            t.instance.Text = L(t.key)
+        end
+    end
+    if UI.Title then UI.Title.Text = L("UI_TITLE", VERSION) end
+    if UI.MiniBtn then UI.MiniBtn.Text = L("MINI_HANDLE") end
+    if UI.MiniTip then UI.MiniTip.Text = L("MINI_TIP") end
+end
+
+local function saveMenuPos(pos)
+    Persist.set("ui_menu_pos", {sx=pos.X.Scale,x=pos.X.Offset,sy=pos.Y.Scale,y=pos.Y.Offset})
+end
+local function loadMenuPos(def)
+    local d = Persist.get("ui_menu_pos", nil)
+    if d then return UDim2.new(d.sx or 0, d.x or 0, d.sy or 0, d.y or 0) end
+    return def
+end
+
+function UI.createRoot()
+    local screen = Instance.new("ScreenGui")
+    screen.Name = "UniversalUtility_UI"
+    screen.ResetOnSpawn = false
+    pcall(function() screen.Parent = (gethui and gethui()) or game:GetService("CoreGui") end)
+    UI.Screen = screen
+    GlobalMaid:Give(screen)
+
+    local mini = Instance.new("TextButton")
+    mini.Size = UDim2.new(0,46,0,46)
+    mini.BackgroundColor3 = Color3.fromRGB(36,40,55)
+    mini.Font = Enum.Font.GothamBold
+    mini.TextColor3 = Color3.new(1,1,1)
+    mini.TextSize = 20
+    mini.Text = L("MINI_HANDLE")
+    mini.Visible = false
+    mini.Parent = screen
+    Instance.new("UICorner", mini).CornerRadius = UDim.new(0,10)
+    UI.MiniBtn = mini
+
+    local miniTip = Instance.new("TextLabel")
+    miniTip.BackgroundTransparency = 1
+    miniTip.Size = UDim2.new(1,0,0,14)
+    miniTip.Position = UDim2.new(0,0,1,-14)
+    miniTip.Font = Enum.Font.Code
+    miniTip.TextSize = 11
+    miniTip.TextColor3 = Color3.fromRGB(200,210,225)
+    miniTip.Text = L("MINI_TIP")
+    miniTip.Parent = mini
+    UI.MiniTip = miniTip
+
+    local main = Instance.new("Frame")
+    main.Size = UDim2.new(0,360,0,500)
+    main.Position = loadMenuPos(UDim2.new(0.05,0,0.25,0))
+    main.BackgroundColor3 = Color3.fromRGB(20,23,32)
+    main.Parent = screen
+    Instance.new("UICorner", main).CornerRadius = UDim.new(0,12)
+    UI.Main = main
+
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1,0,0,44)
+    header.BackgroundColor3 = Color3.fromRGB(30,34,46)
+    header.Parent = main
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0,12)
+
+    local title = Instance.new("TextLabel")
+    title.BackgroundTransparency = 1
+    title.Size = UDim2.new(1,-80,1,0)
+    title.Position = UDim2.new(0,14,0,0)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 15
+    title.TextColor3 = Color3.fromRGB(235,235,245)
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Text = L("UI_TITLE", VERSION)
+    title.Parent = header
+    UI.Title = title
+
+    local hide = Instance.new("TextButton")
+    hide.Size = UDim2.new(0,60,0,26)
+    hide.Position = UDim2.new(1,-70,0.5,-13)
+    hide.BackgroundColor3 = Color3.fromRGB(55,65,90)
+    hide.TextColor3 = Color3.new(1,1,1)
+    hide.Font = Enum.Font.GothamBold
+    hide.TextSize = 12
+    hide.Text = "Hide"
+    hide.Parent = header
+    Instance.new("UICorner", hide).CornerRadius = UDim.new(0,8)
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1,-18,1,-54)
+    scroll.Position = UDim2.new(0,9,0,50)
+    scroll.BackgroundTransparency = 1
+    scroll.ScrollBarThickness = 6
+    scroll.CanvasSize = UDim2.new()
+    scroll.Parent = main
+    local list = Instance.new("UIListLayout", scroll)
+    list.Padding = UDim.new(0,8)
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    GlobalMaid:Give(list.Changed:Connect(function(p)
+        if p=="AbsoluteContentSize" then
+            scroll.CanvasSize = UDim2.new(0,0,0,list.AbsoluteContentSize.Y + 20)
+        end
+    end))
+
+    Util.draggable(main, header, function(pos)
+        saveMenuPos(pos)
+        if not main.Visible then mini.Position = pos end
+    end)
+    Util.draggable(mini, mini, saveMenuPos)
+
+    GlobalMaid:Give(hide.MouseButton1Click:Connect(function()
+        main.Visible=false; mini.Visible=true; mini.Position=main.Position; saveMenuPos(mini.Position)
+    end))
+    GlobalMaid:Give(mini.MouseButton1Click:Connect(function()
+        main.Visible=true; mini.Visible=false; main.Position=mini.Position; saveMenuPos(main.Position)
+    end))
+
+    GlobalMaid:Give(UserInputService.InputBegan:Connect(function(input,gp)
+        if gp then return end
+        if input.KeyCode == Enum.KeyCode.F4 then
+            if main.Visible then
+                main.Visible=false; mini.Visible=true; mini.Position=main.Position
+            else
+                main.Visible=true; mini.Visible=false; main.Position=mini.Position
+            end
+        end
+    end))
+
+    UI.Screen, UI.Container = screen, scroll
+end
+
+function UI.createPanel(titleKey)
+    local holder = Instance.new("Frame")
+    holder.BackgroundColor3 = Color3.fromRGB(28,32,44)
+    holder.Size = UDim2.new(1,0,0,0)
+    holder.AutomaticSize = Enum.AutomaticSize.Y
+    holder.Parent = UI.Container
+    Instance.new("UICorner", holder).CornerRadius = UDim.new(0,10)
+
+    local header = Instance.new("TextButton")
+    header.Size = UDim2.new(1,-14,0,38)
+    header.Position = UDim2.new(0,7,0,7)
+    header.BackgroundColor3 = Color3.fromRGB(45,52,68)
+    header.Font = Enum.Font.GothamBold
+    header.TextColor3 = Color3.new(1,1,1)
+    header.TextSize = 14
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.Text = "▼ "..L(titleKey)
+    header.Parent = holder
+    mark(header, titleKey)
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0,8)
+
+    local content = Instance.new("Frame")
+    content.BackgroundTransparency = 1
+    content.Position = UDim2.new(0,10,0,46)
+    content.Size = UDim2.new(1,-20,0,0)
+    content.AutomaticSize = Enum.AutomaticSize.Y
+    content.Parent = holder
+    local layout = Instance.new("UIListLayout", content)
+    layout.Padding = UDim.new(0,6)
+
+    local expanded = true
+    GlobalMaid:Give(header.MouseButton1Click:Connect(function()
+        expanded = not expanded
+        header.Text = (expanded and "▼ " or "► ")..L(titleKey)
+        for _, c in ipairs(content:GetChildren()) do
+            if c:IsA("GuiObject") then c.Visible = expanded end
+        end
+        content.Visible = expanded
+    end))
+
+    UI.panels[titleKey] = content
+    return content
+end
+
+function UI.label(parent, textOrKey, isKey)
+    local lbl = Instance.new("TextLabel")
+    lbl.BackgroundTransparency = 1
+    lbl.Size = UDim2.new(1,0,0,20)
+    lbl.Font = Enum.Font.Code
+    lbl.TextSize = 14
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextColor3 = Color3.fromRGB(205,210,220)
+    lbl.Text = isKey and L(textOrKey) or textOrKey
+    if isKey then mark(lbl, textOrKey) end
+    lbl.Parent = parent
+    return lbl
+end
+
+function UI.button(parent, keyOrText, isKey, callback)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1,0,0,30)
+    b.BackgroundColor3 = Color3.fromRGB(55,65,90)
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 13
+    b.Text = isKey and L(keyOrText) or keyOrText
+    if isKey then mark(b,keyOrText) end
+    b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    GlobalMaid:Give(b.MouseButton1Click:Connect(function() pcall(callback) end))
+    return b
+end
+
+function UI.toggle(parent,labelKey,persistKey,default,callback)
+    local holder = Instance.new("Frame")
+    holder.BackgroundTransparency = 1
+    holder.Size = UDim2.new(1,0,0,30)
+    holder.Parent = parent
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0,60,1,0)
+    btn.BackgroundColor3 = Color3.fromRGB(80,90,120)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.Parent = holder
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.BackgroundTransparency = 1
+    lbl.Position = UDim2.new(0,70,0,0)
+    lbl.Size = UDim2.new(1,-70,1,0)
+    lbl.Font = Enum.Font.Code
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextColor3 = Color3.fromRGB(200,210,220)
+    lbl.Text = L(labelKey)
+    lbl.Parent = holder
+    mark(lbl, labelKey)
+
+    local state = Persist.get(persistKey, default)
+    local function updateBtn()
+        btn.Text = state and "ON" or "OFF"
+        btn.BackgroundColor3 = state and Color3.fromRGB(60,150,80) or Color3.fromRGB(150,60,60)
+    end
+    updateBtn()
+
+    GlobalMaid:Give(btn.MouseButton1Click:Connect(function()
+        state = not state
+        Persist.set(persistKey, state)
+        updateBtn()
+        pcall(callback, state)
+    end))
+
+    return holder
+end
+
+function UI.slider(parent, labelKey, persistKey, min, max, default, step, callback)
+    local holder = Instance.new("Frame")
+    holder.BackgroundTransparency = 1
+    holder.Size = UDim2.new(1,0,0,50)
+    holder.Parent = parent
+
+    local lbl = Instance.new("TextLabel")
+    lbl.BackgroundTransparency = 1
+    lbl.Size = UDim2.new(1,0,0,20)
+    lbl.Font = Enum.Font.Code
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextColor3 = Color3.fromRGB(200,210,220)
+    lbl.Text = L(labelKey)..": "..tostring(default)
+    lbl.Parent = holder
+    mark(lbl, labelKey)
+
+    local track = Instance.new("Frame")
+    track.Position = UDim2.new(0,0,0,25)
+    track.Size = UDim2.new(1,0,0,20)
+    track.BackgroundColor3 = Color3.fromRGB(60,65,85)
+    track.Parent = holder
+    Instance.new("UICorner", track).CornerRadius = UDim.new(0,10)
+
+    local handle = Instance.new("TextButton")
+    handle.Size = UDim2.new(0,20,1,0)
+    handle.BackgroundColor3 = Color3.fromRGB(100,120,160)
+    handle.Text = ""
+    handle.Parent = track
+    Instance.new("UICorner", handle).CornerRadius = UDim.new(0,10)
+
+    local value = Persist.get(persistKey, default)
+    local function updateSlider()
+        local pct = (value - min) / (max - min)
+        handle.Position = UDim2.new(pct, -10, 0, 0)
+        lbl.Text = L(labelKey)..": "..tostring(math.floor(value * 100) / 100)
+    end
+    updateSlider()
+
+    local dragging = false
+    GlobalMaid:Give(handle.MouseButton1Down:Connect(function()
+        dragging = true
+    end))
+    GlobalMaid:Give(UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end))
+    GlobalMaid:Give(handle.MouseMoved:Connect(function(x)
+        if dragging then
+            local pct = math.clamp((x - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+            value = min + pct * (max - min)
+            value = math.floor(value / step) * step
+            Persist.set(persistKey, value)
+            updateSlider()
+            pcall(callback, value)
+        end
+    end))
+
+    return holder
+end
+
+--------------------------------------------------
 -- Inicialização com overlay básico
 --------------------------------------------------
 local function ensureLanguage()
@@ -654,11 +973,176 @@ end
 
 -- Position update with reduced frequency (~8 Hz)
 local positionUpdateAcc = 0
-local positionLabel = nil
 
 -- Initialize everything
 task.spawn(function()
     ensureLanguage()
+    
+    -- Create main UI
+    UI.createRoot()
+    
+    -- Create panels
+    local panelGeneral = UI.createPanel("PANEL_GENERAL")
+    local panelMovement = UI.createPanel("PANEL_MOVEMENT")
+    local panelCamera = UI.createPanel("PANEL_CAMERA")
+    local panelStats = UI.createPanel("PANEL_STATS")
+    local panelExtras = UI.createPanel("PANEL_EXTRAS")
+    local panelFly = UI.createPanel("PANEL_FLY")
+    
+    -- General panel
+    UI.label(panelGeneral, "SECTION_INFO", true)
+    UI.label(panelGeneral, L("LABEL_VERSION")..": "..VERSION, false)
+    UI.label(panelGeneral, L("LABEL_FS")..": "..(hasFS and "Yes" or "No"), false)
+    UI.label(panelGeneral, L("LABEL_DEVICE")..": "..(isMobile and "Mobile" or "Desktop"), false)
+    
+    UI.button(panelGeneral, "BTN_LANG_SWITCH", true, function()
+        local nextLang = Lang.current == "en" and "pt" or "en"
+        Lang.set(nextLang)
+        UI.applyLanguage()
+        notify("Lang", L("LANG_CHANGED", Lang.available[nextLang]))
+    end)
+    
+    if isMobile then
+        UI.label(panelGeneral, "SECTION_TOUCH", true)
+        UI.button(panelGeneral, "BTN_RESPAWN", true, function()
+            local hum = Util.getHumanoid()
+            if hum then hum.Health = 0 end
+        end)
+        UI.button(panelGeneral, "BTN_RESET_FOV", true, function()
+            local cam = workspace.CurrentCamera
+            if cam then
+                cam.FieldOfView = 70
+                Persist.set("camera_fov", 70)
+                notify("FOV", L("NOTIFY_FOV_RESET"))
+            end
+        end)
+    end
+    
+    -- Movement panel
+    UI.slider(panelMovement, "SLIDER_WALKSPEED", "walkspeed_value", 4, 64, 16, 1, function(v)
+        local hum = Util.getHumanoid()
+        if hum then hum.WalkSpeed = v end
+    end)
+    
+    UI.slider(panelMovement, "SLIDER_JUMPPOWER", "jumppower_value", 25, 150, 50, 1, function(v)
+        local hum = Util.getHumanoid()
+        if hum and hum.UseJumpPower ~= false then hum.JumpPower = v end
+    end)
+    
+    UI.toggle(panelMovement, "TOGGLE_REAPPLY", "auto_reapply_stats", true, function(on)
+        if on then
+            GlobalMaid:Give(LocalPlayer.CharacterAdded:Connect(function()
+                task.wait(0.3)
+                local h = Util.getHumanoid()
+                if h then
+                    local ws = Persist.get("walkspeed_value", 16)
+                    local jp = Persist.get("jumppower_value", 50)
+                    h.WalkSpeed = ws
+                    if h.UseJumpPower ~= false then h.JumpPower = jp end
+                end
+            end))
+        end
+    end)
+    
+    UI.toggle(panelMovement, "TOGGLE_NOCLIP", "noclip_enabled", false, function(on)
+        setNoclip(on)
+    end)
+    
+    -- Camera panel
+    UI.slider(panelCamera, "SLIDER_FOV", "camera_fov", 40, 120, 70, 1, function(v)
+        local cam = workspace.CurrentCamera
+        if cam then cam.FieldOfView = v end
+    end)
+    
+    UI.toggle(panelCamera, "TOGGLE_SHIFTLOCK", "camera_shiftlock", false, function(on)
+        CameraController.shiftLock = on
+        Persist.set("camera_shiftlock", on)
+    end)
+    
+    UI.toggle(panelCamera, "TOGGLE_SMOOTH", "camera_smooth", false, function(on)
+        CameraController.smooth = on
+        Persist.set("camera_smooth", on)
+    end)
+    
+    UI.slider(panelCamera, "SLIDER_CAM_SENS", "camera_sens", 0.2, 3, 1, 0.1, function(v)
+        CameraController.sensitivity = v
+        Persist.set("camera_sens", v)
+    end)
+    
+    -- Stats panel
+    local fpsLabel = UI.label(panelStats, L("LABEL_FPS")..": ...", false)
+    local memLabel = UI.label(panelStats, L("LABEL_MEM")..": ...", false)
+    local pingLabel = UI.label(panelStats, L("LABEL_PING")..": ...", false)
+    local playerLabel = UI.label(panelStats, L("LABEL_PLAYERS")..": ...", false)
+    
+    MetricsService.observe(function(data)
+        fpsLabel.Text = L("LABEL_FPS")..": "..data.fps
+        memLabel.Text = L("LABEL_MEM")..": "..math.floor(data.mem).." KB"
+        pingLabel.Text = L("LABEL_PING")..": "..data.ping.." ms"
+        playerLabel.Text = L("LABEL_PLAYERS")..": "..data.players
+    end)
+    
+    UI.toggle(panelStats, "TOGGLE_OVERLAY", "show_overlay", true, function(on)
+        -- Overlay toggle will be handled by command
+    end)
+    
+    UI.slider(panelStats, "SLIDER_OVERLAY_INTERVAL", "overlay_interval", 0.5, 5, 1, 0.1, function(v)
+        MetricsService.setInterval(v)
+    end)
+    
+    -- Extras panel
+    UI.label(panelExtras, "SECTION_AMBIENCE", true)
+    UI.slider(panelExtras, "SLIDER_WORLD_TIME", "world_time_value", 0, 24, 12, 0.25, function(v)
+        if Persist.get("world_time_apply", false) then
+            Lighting.ClockTime = v
+        end
+    end)
+    
+    UI.toggle(panelExtras, "TOGGLE_WORLD_TIME", "world_time_apply", false, function(on)
+        if on then
+            Lighting.ClockTime = Persist.get("world_time_value", 12)
+        else
+            Lighting.ClockTime = 12
+        end
+    end)
+    
+    UI.button(panelExtras, "BTN_EXPORT", true, function()
+        if typeof(setclipboard) == "function" then
+            setclipboard(HttpService:JSONEncode(Persist._data))
+            notify("UU", L("COMMAND_EXPORTED"))
+        end
+    end)
+    
+    UI.button(panelExtras, "BTN_IMPORT", true, function()
+        if typeof(getclipboard) == "function" then
+            pcall(function()
+                local data = HttpService:JSONDecode(getclipboard())
+                if type(data) == "table" then
+                    Persist._data = data
+                    Persist.flush(true)
+                    notify("UU", L("COMMAND_IMPORTED"))
+                end
+            end)
+        end
+    end)
+    
+    -- Fly panel
+    UI.button(panelFly, "BTN_FLY_TOGGLE", true, function()
+        setFly()
+    end)
+    
+    UI.slider(panelFly, "SLIDER_FLY_SPEED", "fly_speed", 10, 200, 60, 5, function(v)
+        Fly.speed = v
+        Persist.set("fly_speed", v)
+    end)
+    
+    UI.slider(panelFly, "SLIDER_FLY_VERTICAL", "fly_vertical_speed", 10, 100, 40, 5, function(v)
+        Fly.verticalSpeed = v
+        Persist.set("fly_vertical_speed", v)
+    end)
+    
+    -- Apply language to UI
+    UI.applyLanguage()
     
     -- Create a performance overlay
     local screen = Instance.new("ScreenGui")
@@ -693,8 +1177,6 @@ task.spawn(function()
     if savedPos then
         overlay.Position = UDim2.new(savedPos.sx or 1, savedPos.x or -210, savedPos.sy or 0, savedPos.y or 10)
     end
-    
-    positionLabel = overlay
     
     -- Connect to metrics with position updates
     MetricsService.observe(function(data)
@@ -751,5 +1233,6 @@ return {
     Noclip = Noclip,
     CameraController = CameraController,
     Commands = Commands,
+    UI = UI,
     VERSION = VERSION
 }
