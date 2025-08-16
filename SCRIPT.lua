@@ -1,14 +1,4 @@
---[[
-Universal Client Utility (Advanced UI) v0.6.1 (UI Refactor + Legacy Fly GUI + Noclip Fix)
-Autor original: (Eduardo854832)
-Alterações solicitadas:
- - Menu totalmente redesenhado (painéis expansíveis estilo "accordion")
- - Substituição do sistema de Fly anterior pelo "FLY GUI V3" fornecido
- - Correção: Noclip agora restaura o estado original de CanCollide ao desativar
- - Mantidas: Persistência, internacionalização, ajustes de humanoide, câmera, overlay, posições, ambiente, stats, atalhos mobile
-Uso educacional; não usar para violar ToS.
-]]
-
+-- Version header removed per user request. Full script retained.
 local VERSION = "0.6.1"
 
 -- ==== Serviços ====
@@ -199,7 +189,6 @@ local function L(k, ...)
     return s
 end
 
--- Seleção de idioma caso não exista preferido
 local function ensureLanguage(callback)
     if Lang.current then callback() return end
     local sg = Instance.new("ScreenGui")
@@ -436,7 +425,6 @@ function UI.createRoot()
     UI.Container = scroll
 end
 
--- Cria painel colapsável
 function UI.createPanel(keyTitle)
     local holder = Instance.new("Frame")
     holder.BackgroundColor3 = Color3.fromRGB(28,32,42)
@@ -484,7 +472,6 @@ function UI.createPanel(keyTitle)
     return content
 end
 
--- Elementos reusáveis
 function UI.label(parent, text, isKey)
     local lbl = Instance.new("TextLabel")
     lbl.BackgroundTransparency = 1
@@ -632,11 +619,9 @@ function UI.slider(parent, labelKey, key, minVal, maxVal, defaultVal, step, call
     end
 end
 
--- ===== Construção principal =====
 ensureLanguage(function()
     UI.createRoot()
 
-    -- Painéis (ordem)
     local panelGeneral  = UI.createPanel("PANEL_GENERAL")
     local panelMovement = UI.createPanel("PANEL_MOVEMENT")
     local panelCamera   = UI.createPanel("PANEL_CAMERA")
@@ -644,7 +629,6 @@ ensureLanguage(function()
     local panelExtras   = UI.createPanel("PANEL_EXTRAS")
     local panelFly      = UI.createPanel("PANEL_FLY")
 
-    -- Performance Overlay
     Core.register({
         name = "PerformanceOverlay",
         init = function(ctx)
@@ -690,7 +674,6 @@ ensureLanguage(function()
         end
     })
 
-    -- Geral
     Core.register({
         name="GeneralInfo",
         init=function()
@@ -706,7 +689,6 @@ ensureLanguage(function()
                 notify("Lang", L("LANG_CHANGED"))
             end)
 
-            -- Leaderstats
             local lsContainer = Instance.new("Frame")
             lsContainer.BackgroundTransparency = 1
             lsContainer.Size = UDim2.new(1,0,0,0)
@@ -741,7 +723,6 @@ ensureLanguage(function()
                 if ch.Name=="leaderstats" then task.delay(0.3,rebuild) end
             end)
 
-            -- Mobile quick buttons
             if isMobile then
                 UI.label(panelGeneral,"SECTION_TOUCH",true)
                 UI.button(panelGeneral,"BTN_RESPAWN",true,function()
@@ -762,7 +743,6 @@ ensureLanguage(function()
         end
     })
 
-    -- Movimento
     Core.register({
         name="Movement",
         init=function()
@@ -805,7 +785,6 @@ ensureLanguage(function()
         end
     })
 
-    -- Câmera
     Core.register({
         name="CameraSettings",
         init=function()
@@ -868,7 +847,6 @@ ensureLanguage(function()
         end
     })
 
-    -- Stats
     Core.register({
         name="StatsPanel",
         init=function()
@@ -894,7 +872,6 @@ ensureLanguage(function()
         end
     })
 
-    -- Extras (Overlay / Noclip / Posições / Ambiente) + Noclip Fix
     Core.register({
         name="Extras",
         init=function(ctx)
@@ -911,11 +888,9 @@ ensureLanguage(function()
                 end
             end)
 
-            -- Noclip (corrigido: restaura estado original)
             local noclipConn
             local noclipCharConn
             local storedCollision = {}
-
             local function applyNoclipToCharacter(char)
                 if not char then return end
                 for _, part in ipairs(char:GetDescendants()) do
@@ -927,7 +902,6 @@ ensureLanguage(function()
                     end
                 end
             end
-
             UI.toggle(panelExtras,"TOGGLE_NOCLIP","extra_noclip",false,function(on)
                 if on then
                     storedCollision = {}
@@ -961,7 +935,6 @@ ensureLanguage(function()
                 end
             end)
 
-            -- Posições
             UI.label(panelExtras,"SECTION_POSITIONS",true)
             local savedPositions = Persist.get("saved_positions", {})
             local function savePositions() Persist.set("saved_positions", savedPositions) end
@@ -1044,7 +1017,6 @@ ensureLanguage(function()
                 end)
             end
 
-            -- Ambiente
             UI.label(panelExtras,"SECTION_AMBIENCE",true)
             local applyLighting = false
             local originalTime = Lighting.ClockTime
@@ -1065,36 +1037,30 @@ ensureLanguage(function()
         end
     })
 
-    -- Fly GUI Legacy
     Core.register({
         name="LegacyFlyGUI",
         init=function()
             UI.label(panelFly,"LEGACY_FLY_NOTE",true)
-
             local flyGuiInstance
             local isOpen = false
             local toggleBtn
-
             local function buildFlyGUI()
                 if flyGuiInstance then
                     flyGuiInstance.Enabled = true
                     return
                 end
-
                 local main = Instance.new("ScreenGui")
                 main.Name = "FlyLegacyGUI"
                 main.ResetOnSpawn = false
                 pcall(function()
                     main.Parent = (gethui and gethui()) or game:GetService("CoreGui")
                 end)
-
                 local Frame = Instance.new("Frame")
                 Frame.Parent = main
                 Frame.BackgroundColor3 = Color3.fromRGB(163, 255, 137)
                 Frame.BorderColor3 = Color3.fromRGB(103, 221, 213)
                 Frame.Position = UDim2.new(0.100320168, 0, 0.379746825, 0)
                 Frame.Size = UDim2.new(0, 190, 0, 57)
-
                 local up = Instance.new("TextButton")
                 up.Name = "up"
                 up.Parent = Frame
@@ -1104,14 +1070,12 @@ ensureLanguage(function()
                 up.Text = "UP"
                 up.TextColor3 = Color3.fromRGB(0, 0, 0)
                 up.TextSize = 14
-
                 local down = up:Clone()
                 down.Name = "down"
                 down.Text = "DOWN"
                 down.BackgroundColor3 = Color3.fromRGB(215,255,121)
                 down.Position = UDim2.new(0, 0, 0.491228074, 0)
                 down.Parent = Frame
-
                 local onof = Instance.new("TextButton")
                 onof.Name = "onof"
                 onof.Parent = Frame
@@ -1122,7 +1086,6 @@ ensureLanguage(function()
                 onof.Text = "fly"
                 onof.TextColor3 = Color3.fromRGB(0,0,0)
                 onof.TextSize = 14
-
                 local title = Instance.new("TextLabel")
                 title.Parent = Frame
                 title.BackgroundColor3 = Color3.fromRGB(242,60,255)
@@ -1133,7 +1096,6 @@ ensureLanguage(function()
                 title.TextColor3 = Color3.fromRGB(0,0,0)
                 title.TextScaled = true
                 title.TextWrapped = true
-
                 local plus = Instance.new("TextButton")
                 plus.Name = "plus"
                 plus.Parent = Frame
@@ -1145,7 +1107,6 @@ ensureLanguage(function()
                 plus.TextColor3 = Color3.fromRGB(0,0,0)
                 plus.TextScaled = true
                 plus.TextWrapped = true
-
                 local speedLbl = Instance.new("TextLabel")
                 speedLbl.Name = "speed"
                 speedLbl.Parent = Frame
@@ -1157,14 +1118,12 @@ ensureLanguage(function()
                 speedLbl.TextColor3 = Color3.fromRGB(0,0,0)
                 speedLbl.TextScaled = true
                 speedLbl.TextWrapped = true
-
                 local mine = plus:Clone()
                 mine.Name = "mine"
                 mine.Text = "-"
                 mine.Position = UDim2.new(0.231578946, 0, 0.491228074, 0)
                 mine.Size = UDim2.new(0,45,0,29)
                 mine.Parent = Frame
-
                 local closebutton = Instance.new("TextButton")
                 closebutton.Name = "Close"
                 closebutton.Parent = Frame
@@ -1174,7 +1133,6 @@ ensureLanguage(function()
                 closebutton.TextSize = 30
                 closebutton.Font = Enum.Font.SourceSans
                 closebutton.Position = UDim2.new(0,0,-1,27)
-
                 local mini = Instance.new("TextButton")
                 mini.Name = "minimize"
                 mini.Parent = Frame
@@ -1184,7 +1142,6 @@ ensureLanguage(function()
                 mini.TextSize = 40
                 mini.Font = Enum.Font.SourceSans
                 mini.Position = UDim2.new(0,44,-1,27)
-
                 local mini2 = Instance.new("TextButton")
                 mini2.Name = "minimize2"
                 mini2.Parent = Frame
@@ -1195,50 +1152,30 @@ ensureLanguage(function()
                 mini2.Font = Enum.Font.SourceSans
                 mini2.Position = UDim2.new(0,44,-1,57)
                 mini2.Visible = false
-
                 local speeds = 1
                 local speaker = Players.LocalPlayer
                 local nowe = false
                 local tpwalking = false
-
                 notify("FLY GUI V3","BY XNEO",4)
-
                 Frame.Active = true
                 Frame.Draggable = true
-
                 local function enableStates(h,on)
-                    local list = {
-                        "Climbing","FallingDown","Flying","Freefall","GettingUp","Jumping","Landed",
-                        "Physics","PlatformStanding","Ragdoll","Running","RunningNoPhysics",
-                        "Seated","StrafingNoPhysics","Swimming"
-                    }
+                    local list = {"Climbing","FallingDown","Flying","Freefall","GettingUp","Jumping","Landed","Physics","PlatformStanding","Ragdoll","Running","RunningNoPhysics","Seated","StrafingNoPhysics","Swimming"}
                     for _, name in ipairs(list) do
-                        safe(function()
-                            h:SetStateEnabled(Enum.HumanoidStateType[name], on)
-                        end)
+                        safe(function() h:SetStateEnabled(Enum.HumanoidStateType[name], on) end)
                     end
                 end
-
                 onof.MouseButton1Down:Connect(function()
                     local hum = speaker.Character and speaker.Character:FindFirstChildWhichIsA("Humanoid")
                     if not hum then return end
                     if nowe then
-                        nowe = false
-                        tpwalking = false
-                        enableStates(hum,true)
-                        hum:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
-                        if speaker.Character:FindFirstChild("Animate") then
-                            speaker.Character.Animate.Disabled = false
-                        end
+                        nowe = false; tpwalking = false; enableStates(hum,true); hum:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
+                        if speaker.Character:FindFirstChild("Animate") then speaker.Character.Animate.Disabled = false end
                     else
-                        nowe = true
-                        enableStates(hum,false)
-                        hum:ChangeState(Enum.HumanoidStateType.Swimming)
+                        nowe = true; enableStates(hum,false); hum:ChangeState(Enum.HumanoidStateType.Swimming)
                         if speaker.Character:FindFirstChild("Animate") then
                             speaker.Character.Animate.Disabled = true
-                            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
-                                track:AdjustSpeed(0)
-                            end
+                            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do track:AdjustSpeed(0) end
                         end
                         tpwalking = true
                         for i = 1, speeds do
@@ -1247,152 +1184,64 @@ ensureLanguage(function()
                                 local chr = speaker.Character
                                 local h = chr and chr:FindFirstChildWhichIsA("Humanoid")
                                 while tpwalking and hb:Wait() and chr and h and h.Parent do
-                                    if h.MoveDirection.Magnitude > 0 then
-                                        chr:TranslateBy(h.MoveDirection)
-                                    end
+                                    if h.MoveDirection.Magnitude > 0 then chr:TranslateBy(h.MoveDirection) end
                                 end
                             end)
                         end
                     end
                 end)
-
                 local tis
                 up.MouseButton1Down:Connect(function()
                     tis = up.MouseEnter:Connect(function()
-                        while tis do
-                            RunService.Heartbeat:Wait()
-                            local root = Util.getRoot()
-                            if root then
-                                root.CFrame = root.CFrame * CFrame.new(0,1,0)
-                            end
+                        while tis do RunService.Heartbeat:Wait(); local root = Util.getRoot(); if root then
+                            root.CFrame = root.CFrame * CFrame.new(0,1,0) end
                         end
                     end)
                 end)
-                up.MouseLeave:Connect(function()
-                    if tis then tis:Disconnect(); tis=nil end
-                end)
-
+                up.MouseLeave:Connect(function() if tis then tis:Disconnect(); tis=nil end end)
                 local dis
                 down.MouseButton1Down:Connect(function()
                     dis = down.MouseEnter:Connect(function()
-                        while dis do
-                            RunService.Heartbeat:Wait()
-                            local root = Util.getRoot()
-                            if root then
-                                root.CFrame = root.CFrame * CFrame.new(0,-1,0)
-                            end
+                        while dis do RunService.Heartbeat:Wait(); local root = Util.getRoot(); if root then
+                            root.CFrame = root.CFrame * CFrame.new(0,-1,0) end
                         end
                     end)
                 end)
-                down.MouseLeave:Connect(function()
-                    if dis then dis:Disconnect(); dis=nil end
-                end)
-
+                down.MouseLeave:Connect(function() if dis then dis:Disconnect(); dis=nil end end)
                 Players.LocalPlayer.CharacterAdded:Connect(function()
                     task.wait(0.7)
-                    local hum2 = Util.getHumanoid()
-                    if hum2 then
-                        hum2.PlatformStand = false
-                    end
-                    local anim = Players.LocalPlayer.Character:FindFirstChild("Animate")
-                    if anim then anim.Disabled = false end
+                    local hum2 = Util.getHumanoid(); if hum2 then hum2.PlatformStand = false end
+                    local anim = Players.LocalPlayer.Character:FindFirstChild("Animate"); if anim then anim.Disabled = false end
                 end)
-
                 plus.MouseButton1Down:Connect(function()
-                    speeds += 1
-                    speedLbl.Text = tostring(speeds)
+                    speeds += 1; speedLbl.Text = tostring(speeds)
                     if nowe then
-                        tpwalking = false
-                        task.wait()
-                        tpwalking = true
+                        tpwalking = false; task.wait(); tpwalking = true
                         for i = 1, speeds do
                             task.spawn(function()
-                                local hb = RunService.Heartbeat
-                                local chr = speaker.Character
-                                local h = chr and chr:FindFirstChildWhichIsA("Humanoid")
-                                while tpwalking and hb:Wait() and chr and h and h.Parent do
-                                    if h.MoveDirection.Magnitude > 0 then
-                                        chr:TranslateBy(h.MoveDirection)
-                                    end
-                                end
+                                local hb = RunService.Heartbeat; local chr = speaker.Character; local h = chr and chr:FindFirstChildWhichIsA("Humanoid")
+                                while tpwalking and hb:Wait() and chr and h and h.Parent do if h.MoveDirection.Magnitude > 0 then chr:TranslateBy(h.MoveDirection) end end
                             end)
                         end
                     end
                 end)
-
                 mine.MouseButton1Down:Connect(function()
-                    if speeds == 1 then
-                        speedLbl.Text = 'min 1'
-                        task.delay(1,function()
-                            speedLbl.Text = tostring(speeds)
-                        end)
-                    else
-                        speeds -= 1
-                        speedLbl.Text = tostring(speeds)
-                        if nowe then
-                            tpwalking = false
-                            task.wait()
-                            tpwalking = true
-                            for i = 1, speeds do
-                                task.spawn(function()
-                                    local hb = RunService.Heartbeat
-                                    local chr = speaker.Character
-                                    local h = chr and chr:FindFirstChildWhichIsA("Humanoid")
-                                    while tpwalking and hb:Wait() and chr and h and h.Parent do
-                                        if h.MoveDirection.Magnitude > 0 then
-                                            chr:TranslateBy(h.MoveDirection)
-                                        end
-                                    end
-                                end)
-                            end
-                        end
-                    end
+                    if speeds == 1 then speedLbl.Text = 'min 1'; task.delay(1,function() speedLbl.Text = tostring(speeds) end) else speeds -= 1; speedLbl.Text = tostring(speeds); if nowe then tpwalking = false; task.wait(); tpwalking = true; for i = 1, speeds do task.spawn(function() local hb = RunService.Heartbeat; local chr = speaker.Character; local h = chr and chr:FindFirstChildWhichIsA("Humanoid"); while tpwalking and hb:Wait() and chr and h and h.Parent do if h.MoveDirection.Magnitude > 0 then chr:TranslateBy(h.MoveDirection) end end end) end end end
                 end)
-
-                closebutton.MouseButton1Click:Connect(function()
-                    main.Enabled = false
-                    isOpen = false
-                    if toggleBtn then toggleBtn.Text = L("FLYGUI_OPEN") end
-                end)
-
-                mini.MouseButton1Click:Connect(function()
-                    up.Visible=false; down.Visible=false; onof.Visible=false; plus.Visible=false; speedLbl.Visible=false; mine.Visible=false
-                    mini.Visible=false; mini2.Visible=true
-                    Frame.BackgroundTransparency=1
-                end)
-                mini2.MouseButton1Click:Connect(function()
-                    up.Visible=true; down.Visible=true; onof.Visible=true; plus.Visible=true; speedLbl.Visible=true; mine.Visible=true
-                    mini.Visible=true; mini2.Visible=false
-                    Frame.BackgroundTransparency=0
-                end)
-
+                closebutton.MouseButton1Click:Connect(function() main.Enabled = false; isOpen = false; if toggleBtn then toggleBtn.Text = L("FLYGUI_OPEN") end end)
+                mini.MouseButton1Click:Connect(function() up.Visible=false; down.Visible=false; onof.Visible=false; plus.Visible=false; speedLbl.Visible=false; mine.Visible=false; mini.Visible=false; mini2.Visible=true; Frame.BackgroundTransparency=1 end)
+                mini2.MouseButton1Click:Connect(function() up.Visible=true; down.Visible=true; onof.Visible=true; plus.Visible=true; speedLbl.Visible=true; mine.Visible=true; mini.Visible=true; mini2.Visible=false; Frame.BackgroundTransparency=0 end)
                 flyGuiInstance = main
             end
-
             toggleBtn = UI.button(panelFly,"FLYGUI_OPEN",true,function()
-                if not isOpen then
-                    buildFlyGUI()
-                    isOpen = true
-                    if toggleBtn then toggleBtn.Text = L("FLYGUI_CLOSE") end
-                else
-                    if flyGuiInstance then flyGuiInstance.Enabled = false end
-                    isOpen = false
-                    if toggleBtn then toggleBtn.Text = L("FLYGUI_OPEN") end
-                end
+                if not isOpen then buildFlyGUI(); isOpen = true; if toggleBtn then toggleBtn.Text = L("FLYGUI_CLOSE") end else if flyGuiInstance then flyGuiInstance.Enabled = false end; isOpen = false; if toggleBtn then toggleBtn.Text = L("FLYGUI_OPEN") end end
             end)
         end
     })
 
-    -- Inicializar
     Core.initPlugins()
     UI.applyLanguage()
     notify("Universal Utility", L("NOTIFY_LOADED", VERSION), 4)
 end)
 
-return {
-    Core = Core,
-    UI = UI,
-    Util = Util,
-    Persist = Persist,
-    Lang = Lang
-}
+return { Core = Core, UI = UI, Util = Util, Persist = Persist, Lang = Lang }
