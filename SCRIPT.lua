@@ -1,5 +1,12 @@
--- Universal Hub Refatorado
-local VERSION = "1.2.0"
+-- Universal Hub Refatorado (Mobile 3D Fly Update)
+-- Guard para evitar múltiplas execuções (minimiza erros de libs externas / remotes duplicados)
+if _G.__UNIVERSAL_HUB_ALREADY then
+    warn("[UniversalHub] Já carregado. Abortando segunda carga.")
+    return _G.__UNIVERSAL_HUB_EXPORTS
+end
+_G.__UNIVERSAL_HUB_ALREADY = true
+
+local VERSION = "1.3.0" -- versão incrementada
 
 ------------------------------------------------------------
 -- CONFIGURAÇÕES
@@ -20,8 +27,12 @@ local CONFIG = {
     FLY_DEFAULT_SPEED = 50,
     FLY_MIN_SPEED = 5,
     FLY_MAX_SPEED = 500,
+    FLY_SMOOTHNESS = 0.25,          -- 0 = instant, 0.25 = suavizado
+    FLY_VERTICAL_SCALE = 1.0,       -- escala vertical (pode reduzir se subir/descer muito rápido)
+    FLY_MIN_PITCH_TO_LIFT = 0.05,   -- sensibilidade: quanto de |LookVector.Y| precisa para gerar vertical
     HOTKEY_TOGGLE_MENU = Enum.KeyCode.RightShift,
     HOTKEY_TOGGLE_FLY  = Enum.KeyCode.F,
+    MOBILE_FULL3D_DEFAULT = true,   -- celular inicia com modo 3D
 }
 
 local COLORS = {
@@ -166,6 +177,8 @@ Lang.data = {
         FLY_SPEED="Velocidade",
         FLY_TOGGLE_ON="Desligar",
         FLY_TOGGLE_OFF="Ligar",
+        FLY_MODE_3D_ON="Modo 3D",
+        FLY_MODE_3D_OFF="Modo Plano",
         PANEL_FLY="Voo",
         PANEL_SPEED="Velocidade",
         PANEL_IY="IY",
@@ -187,6 +200,7 @@ Lang.data = {
         POSITION_SAVED="Posição salva",
         FLOAT_TIP="Clique para abrir",
         SPEED_INPUT_INVALID="Valor inválido",
+        FLY_MODE_CHANGED="Modo de voo: %s",
     },
     en = {
         UI_TITLE="Universal Hub v%s",
@@ -203,6 +217,8 @@ Lang.data = {
         FLY_SPEED="Speed",
         FLY_TOGGLE_ON="Disable",
         FLY_TOGGLE_OFF="Enable",
+        FLY_MODE_3D_ON="3D Mode",
+        FLY_MODE_3D_OFF="Plane Mode",
         PANEL_FLY="Fly",
         PANEL_SPEED="Speed",
         PANEL_IY="IY",
@@ -224,6 +240,7 @@ Lang.data = {
         POSITION_SAVED="Position saved",
         FLOAT_TIP="Click to open",
         SPEED_INPUT_INVALID="Invalid value",
+        FLY_MODE_CHANGED="Fly mode: %s",
     }
 }
 
@@ -237,9 +254,6 @@ local function setLanguage(code)
         activePack = Lang.data[code]
         Persist.set("lang", code)
     end
-end
-if not activePack then
-    -- Somente definimos depois que o usuário escolher
 end
 
 local function L(key, ...)
@@ -264,7 +278,14 @@ local Fly = {
     conn  = nil,
     debounceToggle = 0.15,
     lastToggle = 0,
+    full3D = Persist.get("fly_full3d", nil),
+    _vel = Vector3.zero,
 }
+
+-- define default full3D for mobile if nil
+if Fly.full3D == nil then
+    Fly.full3D = (UserInputService.TouchEnabled and CONFIG.MOBILE_FULL3D_DEFAULT) or false
+end
 
 local function getRoot()
     local char = LocalPlayer.Character
@@ -275,16 +296,44 @@ local function getHum()
     return char and char:FindFirstChildWhichIsA("Humanoid")
 end
 
+-- Direção horizontal + opcional vertical via pitch da câmera
 local function computeDirection(hum,cam)
     local move = hum.MoveDirection
     if move.Magnitude == 0 then return Vector3.zero end
+
     local cf = cam.CFrame
-    local forward = Vector3.new(cf.LookVector.X,0,cf.LookVector.Z).Unit
-    local right   = Vector3.new(cf.RightVector.X,0,cf.RightVector.Z).Unit
-    local x = move:Dot(right)
-    local z = move:Dot(forward)
-    local dir = (right * x) + (forward * z)
-    return dir.Magnitude>0 and dir.Unit or Vector3.zero
+    local look = cf.LookVector
+    -- Componentes planos
+    local forwardFlat = Vector3.new(look.X,0,look.Z)
+    if forwardFlat.Magnitude < 1e-4 then
+        forwardFlat = Vector3.new(0,0,-1)
+    else
+        forwardFlat = forwardFlat.Unit
+    end
+    local rightFlat = Vector3.new(cf.RightVector.X,0,cf.RightVector.Z).Unit
+
+    -- Decompõe MoveDirection (mundo) em eixos da câmera no plano
+    local x = move:Dot(rightFlat)
+    local z = move:Dot(forwardFlat)
+    local dir = (rightFlat * x) + (forwardFlat * z)
+
+    if Fly.full3D then
+        -- Adiciona componente vertical baseado no pitch da câmera só quando há input forward/back (z)
+        -- Evita subir/ descer sem mover analógico
+        if math.abs(z) > 0.01 then
+            local pitchY = look.Y -- -1 a 1
+            if math.abs(pitchY) > CONFIG.FLY_MIN_PITCH_TO_LIFT then
+                dir = dir + Vector3.new(0, pitchY * math.abs(z) * CONFIG.FLY_VERTICAL_SCALE, 0)
+            end
+        end
+    end
+
+    if dir.Magnitude > 0 then
+        dir = dir.Unit
+    else
+        dir = Vector3.zero
+    end
+    return dir
 end
 
 function Fly.setSpeed(n)
@@ -296,6 +345,12 @@ function Fly.setSpeed(n)
     notify("Fly", L("FLY_SPEED_SET", n))
 end
 
+function Fly.setMode(full3d)
+    Fly.full3D = full3d and true or false
+    Persist.set("fly_full3d", Fly.full3D)
+    notify("Fly", L("FLY_MODE_CHANGED", Fly.full3D and L("FLY_MODE_3D_ON") or L("FLY_MODE_3D_OFF")))
+end
+
 function Fly.enable()
     if Fly.active then return end
     local root = getRoot()
@@ -305,14 +360,24 @@ function Fly.enable()
     end
     Fly.active = true
     if Fly.conn then Fly.conn:Disconnect() end
-    Fly.conn = RunService.Heartbeat:Connect(function()
+    Fly.conn = RunService.Heartbeat:Connect(function(dt)
         if not Fly.active then return end
         local r = getRoot(); if not r then return end
         local hum = getHum(); if not hum then return end
         local cam = workspace.CurrentCamera; if not cam then return end
+
         local dir = computeDirection(hum, cam)
-        local vel = dir * Fly.speed
-        if dir.Magnitude == 0 then vel = Vector3.zero end
+        local targetVel = dir * Fly.speed
+
+        -- Suavização
+        if CONFIG.FLY_SMOOTHNESS > 0 then
+            Fly._vel = Fly._vel:Lerp(targetVel, 1 - math.pow(1-CONFIG.FLY_SMOOTHNESS, math.clamp(dt*60,0,5)))
+        else
+            Fly._vel = targetVel
+        end
+
+        local vel = Fly._vel
+        -- Evita acumular gravidade residual
         if r.AssemblyLinearVelocity then
             r.AssemblyLinearVelocity = Vector3.new(vel.X, vel.Y, vel.Z)
         else
@@ -334,6 +399,7 @@ function Fly.disable()
             r.Velocity = Vector3.zero
         end
     end
+    Fly._vel = Vector3.zero
     notify("Fly", L("FLY_DISABLED"))
 end
 
@@ -389,6 +455,9 @@ function UI.applyLanguage()
     end
     if UI.Elements.SliderHint then
         UI.Elements.SliderHint.Text = L("SLIDER_HINT")
+    end
+    if UI.Elements.ModeButton then
+        UI.Elements.ModeButton.Text = Fly.full3D and L("FLY_MODE_3D_ON") or L("FLY_MODE_3D_OFF")
     end
 end
 
@@ -769,18 +838,21 @@ function UI.create()
             UI.applyLanguage()
         end)
 
-        local infoHotkeys = Instance.new("TextLabel")
-        infoHotkeys.BackgroundTransparency=1
-        infoHotkeys.Size=UDim2.new(1,-scale(20),0,scale(36))
-        infoHotkeys.Position=UDim2.new(0,scale(20),0,scale(70))
-        infoHotkeys.Font=Enum.Font.Gotham
-        infoHotkeys.TextSize=CONFIG.FONT_LABEL_SIZE
-        infoHotkeys.TextColor3=COLORS.TEXT_SUB
-        infoHotkeys.Text = L("HOTKEY_FLY").." | "..L("HOTKEY_MENU")
-        infoHotkeys.TextWrapped=true
-        infoHotkeys.TextXAlignment=Enum.TextXAlignment.Left
-        infoHotkeys.Parent=panelFly
-        markTrans(infoHotkeys,"HOTKEY_FLY")
+        local modeBtn = Instance.new("TextButton")
+        modeBtn.Size=UDim2.new(0,scale(140),0,scale(38))
+        modeBtn.Position=UDim2.new(0,scale(20),0,scale(70))
+        modeBtn.BackgroundColor3=COLORS.BTN
+        modeBtn.TextColor3=Color3.new(1,1,1)
+        modeBtn.Font=Enum.Font.Gotham
+        modeBtn.TextSize=CONFIG.FONT_LABEL_SIZE+1
+        modeBtn.Text = Fly.full3D and L("FLY_MODE_3D_ON") or L("FLY_MODE_3D_OFF")
+        modeBtn.Parent=panelFly
+        UI.Elements.ModeButton = modeBtn
+        styleButton(modeBtn)
+        modeBtn.MouseButton1Click:Connect(function()
+            Fly.setMode(not Fly.full3D)
+            UI.applyLanguage()
+        end)
     end
 
     -- Conteúdo Speed
@@ -934,7 +1006,7 @@ end
 local function startWatermarkEnforcer()
     if not CONFIG.ENABLE_WATERMARK_WATCH then return end
     task.spawn(function()
-        task.wait(1.2) -- tolerância inicial
+        task.wait(1.2)
         while UI.Screen and not UI.Destroyed do
             local ok=true
             if not UI.Elements.WatermarkLabel or not UI.Elements.WatermarkLabel.Parent then
@@ -967,7 +1039,6 @@ UserInputService.InputBegan:Connect(function(input,gp)
             end
             notify("UI", L("MENU_TOGGLED"),1.5)
         else
-            -- Se destruída, recria
             UI.create()
             if UI.FloatingButton then UI.FloatingButton.Visible=false end
         end
@@ -1030,10 +1101,8 @@ end
 ------------------------------------------------------------
 -- INICIALIZAÇÃO
 ------------------------------------------------------------
--- Cria sempre o botão flutuante
 UI.createFloatingButton()
 
--- Se idioma já escolhido, cria UI direto; senão faz seleção
 if Lang.current and Lang.data[Lang.current] then
     setLanguage(Lang.current)
     UI.create()
@@ -1047,8 +1116,8 @@ end
 
 startWatermarkEnforcer()
 
--- Retorno público
-return {
+-- Export
+_G.__UNIVERSAL_HUB_EXPORTS = {
     VERSION = VERSION,
     CONFIG = CONFIG,
     Persist = Persist,
