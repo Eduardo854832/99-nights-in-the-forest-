@@ -46,10 +46,10 @@ Persist.load()
 ----------------------------------------------------------------
 local Logger = { _max=120, _lines={}, _dirty=false }
 function Logger.Log(level,msg)
-    local line = os.date("%H:%M:%S").." ["..level.."] ".tostring(msg)
+    local line = os.date("%H:%M:%S").." ["..level.."] "..tostring(msg)
     table.insert(Logger._lines,line)
     if #Logger._lines>Logger._max then table.remove(Logger._lines,1) end
-    warn("[UU]["..level.."] "..msg)
+    warn("[UU]["..level.."] "..tostring(msg))
     Logger._dirty=true
 end
 
