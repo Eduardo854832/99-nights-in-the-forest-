@@ -213,7 +213,9 @@ end
 ----------------------------------------------------------------
 local UI={}
 UI._translatables={}
-local function mark(inst,key,...) table.insert(UI._translatables,{instance=inst,key=key,args={...}}) end
+local function mark(inst,key,...)
+    table.insert(UI._translatables,{instance=inst,key=key,args={...}})
+end
 local function scale(n) return n * CONFIG.UI_SCALE end
 
 local function styleButton(btn)
