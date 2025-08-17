@@ -2773,10 +2773,49 @@ function UI.generateDevUI(featureId, feature, parent, yPos)
             DevFeatures.createStatsWindow()
         end, UDim2.new(0, scale(20), 0, yPos))
         
+    elseif featureId == "remote_spy" then
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+        
     else
         UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
     end
 end
+
+-- Remote Spy
+DevFeatures.remoteSpy = {
+    active = false,
+    hooks = {}
+}
+
+FeatureRegistry.register("remote_spy", {
+    name = "REMOTE_SPY",
+    category = "Dev",
+    defaultEnabled = false,
+    onEnable = function()
+        DevFeatures.remoteSpy.active = true
+        
+        -- Hook RemoteEvent FireServer (if hookmetamethod is available)
+        pcall(function()
+            local oldFireServer
+            oldFireServer = hookmetamethod(game, "__namecall", function(self, ...)
+                local args = {...}
+                local method = getnamecallmethod()
+                
+                if DevFeatures.remoteSpy.active and method == "FireServer" and self:IsA("RemoteEvent") then
+                    Logger.Log("REMOTE", "FireServer: " .. self.Name .. " Args: " .. table.concat(args, ", "))
+                end
+                
+                return oldFireServer(self, ...)
+            end)
+        end)
+        
+        notify("Remote Spy", "Remote spy enabled (may not work on all executors)")
+    end,
+    onDisable = function()
+        DevFeatures.remoteSpy.active = false
+        notify("Remote Spy", "Remote spy disabled")
+    end
+})
 
 ------------------------------------------------------------
 -- SCRIPTS CATEGORY FEATURES  
@@ -3020,11 +3059,6 @@ function UI.generateScriptsUI(featureId, feature, parent, yPos)
         UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
     end
 end
-        
-    else
-        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
-    end
-end
 
 ------------------------------------------------------------
 -- WATERMARK WATCHER
@@ -3182,4 +3216,6 @@ _G.__UNIVERSAL_HUB_EXPORTS = {
     VisualFeatures = VisualFeatures,
     UtilidadesFeatures = UtilidadesFeatures,
     DevFeatures = DevFeatures,
+    ScriptsFeatures = ScriptsFeatures,
+}
 }
