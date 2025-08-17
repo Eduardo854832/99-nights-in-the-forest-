@@ -1132,6 +1132,698 @@ FeatureRegistry.register("gravity", {
 })
 
 ------------------------------------------------------------
+-- TELEPORTE CATEGORY FEATURES
+------------------------------------------------------------
+local TeleporteFeatures = {}
+
+-- Teleport to Player
+TeleporteFeatures.teleportPlayer = {
+    selectedPlayer = nil,
+    players = {}
+}
+
+FeatureRegistry.register("teleport_player", {
+    name = "TELEPORT_TO_PLAYER",
+    category = "Teleporte",
+    defaultEnabled = false
+})
+
+function TeleporteFeatures.refreshPlayerList()
+    TeleporteFeatures.teleportPlayer.players = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(TeleporteFeatures.teleportPlayer.players, player)
+        end
+    end
+end
+
+function TeleporteFeatures.teleportToPlayer(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return end
+    
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    
+    if root and targetRoot then
+        root.CFrame = targetRoot.CFrame + Vector3.new(0, 3, 0)
+        notify("Teleport", "Teleported to " .. targetPlayer.Name)
+    end
+end
+
+-- Waypoints
+TeleporteFeatures.waypoints = {
+    list = Persist.get("waypoints", {}),
+    selectedWaypoint = nil
+}
+
+FeatureRegistry.register("waypoints", {
+    name = "WAYPOINTS",
+    category = "Teleporte", 
+    defaultEnabled = false
+})
+
+function TeleporteFeatures.addWaypoint(name)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+    
+    name = name or "Waypoint " .. (#TeleporteFeatures.waypoints.list + 1)
+    local waypoint = {
+        name = name,
+        position = root.Position,
+        rotation = root.CFrame.Rotation
+    }
+    
+    table.insert(TeleporteFeatures.waypoints.list, waypoint)
+    Persist.set("waypoints", TeleporteFeatures.waypoints.list)
+    notify("Waypoints", "Added waypoint: " .. name)
+    return true
+end
+
+function TeleporteFeatures.teleportToWaypoint(waypoint)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root or not waypoint then return end
+    
+    root.CFrame = CFrame.new(waypoint.position) * waypoint.rotation
+    notify("Waypoints", "Teleported to: " .. waypoint.name)
+end
+
+function TeleporteFeatures.deleteWaypoint(index)
+    if TeleporteFeatures.waypoints.list[index] then
+        local name = TeleporteFeatures.waypoints.list[index].name
+        table.remove(TeleporteFeatures.waypoints.list, index)
+        Persist.set("waypoints", TeleporteFeatures.waypoints.list)
+        notify("Waypoints", "Deleted waypoint: " .. name)
+    end
+end
+
+-- Rejoin
+FeatureRegistry.register("rejoin", {
+    name = "REJOIN",
+    category = "Teleporte",
+    defaultEnabled = false
+})
+
+function TeleporteFeatures.rejoin()
+    if game.JobId ~= "" then
+        game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+    else
+        notify("Rejoin", "Cannot rejoin from Studio")
+    end
+end
+
+-- Server Hop
+FeatureRegistry.register("server_hop", {
+    name = "SERVER_HOP", 
+    category = "Teleporte",
+    defaultEnabled = false
+})
+
+function TeleporteFeatures.serverHop()
+    local TeleportService = game:GetService("TeleportService")
+    local HttpService = game:GetService("HttpService")
+    
+    local function hop()
+        local servers = {}
+        pcall(function()
+            local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+            local response = HttpService:JSONDecode(game:HttpGet(url))
+            if response and response.data then
+                for _, server in ipairs(response.data) do
+                    if server.id ~= game.JobId and server.playing < server.maxPlayers then
+                        table.insert(servers, server.id)
+                    end
+                end
+            end
+        end)
+        
+        if #servers > 0 then
+            local randomServer = servers[math.random(1, #servers)]
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, randomServer, LocalPlayer)
+        else
+            notify("Server Hop", "No available servers found")
+        end
+    end
+    
+    notify("Server Hop", "Finding new server...")
+    task.spawn(hop)
+end
+
+------------------------------------------------------------
+-- VISUAL CATEGORY FEATURES  
+------------------------------------------------------------
+local VisualFeatures = {}
+
+-- FOV Slider
+VisualFeatures.fov = {
+    originalValue = 70,
+    value = Persist.get("fov_value", 70)
+}
+
+FeatureRegistry.register("fov", {
+    name = "FOV",
+    category = "Visual",
+    defaultEnabled = false,
+    setValue = function(value)
+        VisualFeatures.fov.value = value
+        if FeatureRegistry.isEnabled("fov") then
+            workspace.CurrentCamera.FieldOfView = value
+        end
+    end,
+    onEnable = function()
+        local camera = workspace.CurrentCamera
+        if camera then
+            VisualFeatures.fov.originalValue = camera.FieldOfView
+            camera.FieldOfView = VisualFeatures.fov.value
+        end
+    end,
+    onDisable = function()
+        local camera = workspace.CurrentCamera
+        if camera then
+            camera.FieldOfView = VisualFeatures.fov.originalValue
+        end
+    end
+})
+
+-- Freecam
+VisualFeatures.freecam = {
+    active = false,
+    connection = nil,
+    camera = nil,
+    speed = 50
+}
+
+FeatureRegistry.register("freecam", {
+    name = "FREECAM",
+    category = "Visual",
+    defaultEnabled = false,
+    hotkey = Enum.KeyCode.G,
+    onEnable = function()
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+        
+        VisualFeatures.freecam.active = true
+        VisualFeatures.freecam.camera = camera
+        camera.CameraType = Enum.CameraType.Scriptable
+        
+        local cframe = camera.CFrame
+        VisualFeatures.freecam.connection = RunService.RenderStepped:Connect(function(dt)
+            local moveVector = Vector3.new()
+            
+            -- WASD movement
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                moveVector = moveVector + camera.CFrame.LookVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                moveVector = moveVector - camera.CFrame.LookVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                moveVector = moveVector - camera.CFrame.RightVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                moveVector = moveVector + camera.CFrame.RightVector
+            end
+            
+            -- QE for up/down
+            if UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+                moveVector = moveVector - Vector3.new(0, 1, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.E) then
+                moveVector = moveVector + Vector3.new(0, 1, 0)
+            end
+            
+            local speed = VisualFeatures.freecam.speed
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+                speed = speed * 3
+            end
+            
+            if moveVector.Magnitude > 0 then
+                cframe = cframe + moveVector.Unit * speed * dt
+            end
+            
+            camera.CFrame = cframe
+        end)
+    end,
+    onDisable = function()
+        VisualFeatures.freecam.active = false
+        if VisualFeatures.freecam.connection then
+            VisualFeatures.freecam.connection:Disconnect()
+            VisualFeatures.freecam.connection = nil
+        end
+        
+        local camera = workspace.CurrentCamera
+        if camera then
+            camera.CameraType = Enum.CameraType.Custom
+            camera.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+        end
+    end
+})
+
+-- ESP
+VisualFeatures.esp = {
+    active = false,
+    guis = {},
+    distanceCap = Persist.get("esp_distance", 500)
+}
+
+FeatureRegistry.register("esp", {
+    name = "ESP",
+    category = "Visual",
+    defaultEnabled = false,
+    onEnable = function()
+        VisualFeatures.esp.active = true
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                VisualFeatures.createESP(player)
+            end
+        end
+    end,
+    onDisable = function()
+        VisualFeatures.esp.active = false
+        for player, gui in pairs(VisualFeatures.esp.guis) do
+            if gui then gui:Destroy() end
+        end
+        VisualFeatures.esp.guis = {}
+    end
+})
+
+function VisualFeatures.createESP(player)
+    if not player.Character or not player.Character:FindFirstChild("Head") then return end
+    
+    local billboardGui = Instance.new("BillboardGui")
+    billboardGui.Size = UDim2.new(0, 100, 0, 50)
+    billboardGui.StudsOffset = Vector3.new(0, 3, 0)
+    billboardGui.Parent = player.Character.Head
+    
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = player.Name
+    nameLabel.TextColor3 = Color3.new(1, 1, 1)
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.Font = Enum.Font.SourceSansBold
+    nameLabel.TextSize = 14
+    nameLabel.Parent = billboardGui
+    
+    local distanceLabel = Instance.new("TextLabel")
+    distanceLabel.Size = UDim2.new(1, 0, 0.5, 0)
+    distanceLabel.Position = UDim2.new(0, 0, 0.5, 0)
+    distanceLabel.BackgroundTransparency = 1
+    distanceLabel.Text = "0 studs"
+    distanceLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
+    distanceLabel.TextStrokeTransparency = 0
+    distanceLabel.Font = Enum.Font.SourceSans
+    distanceLabel.TextSize = 12
+    distanceLabel.Parent = billboardGui
+    
+    VisualFeatures.esp.guis[player] = billboardGui
+    
+    -- Update distance
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if not VisualFeatures.esp.active or not player.Character or not LocalPlayer.Character then
+            connection:Disconnect()
+            return
+        end
+        
+        local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        
+        if playerRoot and localRoot then
+            local distance = (playerRoot.Position - localRoot.Position).Magnitude
+            distanceLabel.Text = math.floor(distance) .. " studs"
+            
+            -- Hide if beyond distance cap
+            if distance > VisualFeatures.esp.distanceCap then
+                billboardGui.Enabled = false
+            else
+                billboardGui.Enabled = true
+            end
+        end
+    end)
+end
+
+-- Highlights
+VisualFeatures.highlights = {
+    active = false,
+    highlights = {}
+}
+
+FeatureRegistry.register("highlights", {
+    name = "HIGHLIGHTS",
+    category = "Visual", 
+    defaultEnabled = false,
+    onEnable = function()
+        VisualFeatures.highlights.active = true
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                VisualFeatures.createHighlight(player)
+            end
+        end
+    end,
+    onDisable = function()
+        VisualFeatures.highlights.active = false
+        for player, highlight in pairs(VisualFeatures.highlights.highlights) do
+            if highlight then highlight:Destroy() end
+        end
+        VisualFeatures.highlights.highlights = {}
+    end
+})
+
+function VisualFeatures.createHighlight(player)
+    if not player.Character then return end
+    
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = Color3.new(0, 1, 0)
+    highlight.OutlineColor = Color3.new(1, 1, 1)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.Parent = player.Character
+    
+    VisualFeatures.highlights.highlights[player] = highlight
+end
+
+-- Player added/removed events for ESP and Highlights
+Players.PlayerAdded:Connect(function(player)
+    if VisualFeatures.esp.active then
+        task.wait(1) -- Wait for character to load
+        VisualFeatures.createESP(player)
+    end
+    if VisualFeatures.highlights.active then
+        task.wait(1)
+        VisualFeatures.createHighlight(player)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if VisualFeatures.esp.guis[player] then
+        VisualFeatures.esp.guis[player]:Destroy()
+        VisualFeatures.esp.guis[player] = nil
+    end
+    if VisualFeatures.highlights.highlights[player] then
+        VisualFeatures.highlights.highlights[player]:Destroy()
+        VisualFeatures.highlights.highlights[player] = nil
+    end
+end)
+
+------------------------------------------------------------
+-- UTILIDADES CATEGORY FEATURES
+------------------------------------------------------------
+local UtilidadesFeatures = {}
+
+-- Anti-AFK
+UtilidadesFeatures.antiAfk = {
+    active = false,
+    connection = nil
+}
+
+FeatureRegistry.register("anti_afk", {
+    name = "ANTI_AFK",
+    category = "Utilidades",
+    defaultEnabled = false,
+    onEnable = function()
+        UtilidadesFeatures.antiAfk.active = true
+        UtilidadesFeatures.antiAfk.connection = task.spawn(function()
+            while UtilidadesFeatures.antiAfk.active do
+                task.wait(60) -- Wait 60 seconds
+                if UtilidadesFeatures.antiAfk.active then
+                    -- Simulate small movement
+                    pcall(function()
+                        game:GetService("VirtualUser"):CaptureController()
+                        game:GetService("VirtualUser"):ClickButton2(Vector2.new())
+                    end)
+                end
+            end
+        end)
+    end,
+    onDisable = function()
+        UtilidadesFeatures.antiAfk.active = false
+        if UtilidadesFeatures.antiAfk.connection then
+            task.cancel(UtilidadesFeatures.antiAfk.connection)
+            UtilidadesFeatures.antiAfk.connection = nil
+        end
+    end
+})
+
+-- Chat Notifications
+UtilidadesFeatures.chatNotify = {
+    active = Persist.get("chat_notify", false),
+    connections = {}
+}
+
+FeatureRegistry.register("chat_notify", {
+    name = "CHAT_NOTIFY",
+    category = "Utilidades",
+    defaultEnabled = UtilidadesFeatures.chatNotify.active,
+    onEnable = function()
+        UtilidadesFeatures.chatNotify.active = true
+        
+        -- Player joined
+        UtilidadesFeatures.chatNotify.connections.joined = Players.PlayerAdded:Connect(function(player)
+            notify("Player", player.Name .. " joined the game", 3)
+        end)
+        
+        -- Player left
+        UtilidadesFeatures.chatNotify.connections.left = Players.PlayerRemoving:Connect(function(player)
+            notify("Player", player.Name .. " left the game", 3)
+        end)
+    end,
+    onDisable = function()
+        UtilidadesFeatures.chatNotify.active = false
+        for _, connection in pairs(UtilidadesFeatures.chatNotify.connections) do
+            if connection then connection:Disconnect() end
+        end
+        UtilidadesFeatures.chatNotify.connections = {}
+    end
+})
+
+-- Logger UI
+UtilidadesFeatures.loggerUI = {
+    panel = nil,
+    textLabel = nil,
+    updateConnection = nil
+}
+
+FeatureRegistry.register("logger_ui", {
+    name = "LOGGER_UI",
+    category = "Utilidades",
+    defaultEnabled = false
+})
+
+function UtilidadesFeatures.createLoggerPanel()
+    if UtilidadesFeatures.loggerUI.panel then return end
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "LoggerUI"
+    screenGui.ResetOnSpawn = false
+    safeParent(screenGui)
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, scale(400), 0, scale(300))
+    frame.Position = UDim2.new(0.5, -scale(200), 0.5, -scale(150))
+    frame.BackgroundColor3 = COLORS.BG_MAIN
+    frame.Parent = screenGui
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, scale(30))
+    title.BackgroundColor3 = COLORS.BG_TOP
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = CONFIG.FONT_MAIN_SIZE
+    title.Text = L("LOGGER_UI")
+    title.Parent = frame
+    Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+    
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -scale(10), 1, -scale(70))
+    scrollFrame.Position = UDim2.new(0, scale(5), 0, scale(35))
+    scrollFrame.BackgroundTransparency = 1
+    scrollFrame.ScrollBarThickness = 6
+    scrollFrame.Parent = frame
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -scale(10), 1, 0)
+    textLabel.Position = UDim2.new(0, scale(5), 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.TextColor3 = COLORS.TEXT_DIM
+    textLabel.Font = Enum.Font.Code
+    textLabel.TextSize = CONFIG.FONT_LABEL_SIZE
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+    textLabel.TextWrapped = true
+    textLabel.Parent = scrollFrame
+    
+    local copyBtn = Instance.new("TextButton")
+    copyBtn.Size = UDim2.new(0, scale(80), 0, scale(25))
+    copyBtn.Position = UDim2.new(1, -scale(85), 1, -scale(30))
+    copyBtn.Text = L("COPY_LOGS")
+    copyBtn.BackgroundColor3 = COLORS.BTN
+    copyBtn.TextColor3 = Color3.new(1, 1, 1)
+    copyBtn.Font = Enum.Font.Gotham
+    copyBtn.TextSize = CONFIG.FONT_LABEL_SIZE
+    copyBtn.Parent = frame
+    styleButton(copyBtn)
+    
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, scale(60), 0, scale(25))
+    closeBtn.Position = UDim2.new(1, -scale(170), 1, -scale(30))
+    closeBtn.Text = L("BTN_CLOSE")
+    closeBtn.BackgroundColor3 = COLORS.BTN_DANGER
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Font = Enum.Font.Gotham
+    closeBtn.TextSize = CONFIG.FONT_LABEL_SIZE
+    closeBtn.Parent = frame
+    styleButton(closeBtn, {danger = true})
+    
+    copyBtn.MouseButton1Click:Connect(function()
+        local logText = table.concat(Logger._lines, "\n")
+        pcall(function()
+            setclipboard(logText)
+            notify("Logger", "Logs copied to clipboard")
+        end)
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+        UtilidadesFeatures.loggerUI.panel = nil
+    end)
+    
+    UtilidadesFeatures.loggerUI.panel = screenGui
+    UtilidadesFeatures.loggerUI.textLabel = textLabel
+    
+    -- Auto-update logs
+    UtilidadesFeatures.loggerUI.updateConnection = task.spawn(function()
+        while UtilidadesFeatures.loggerUI.panel do
+            if textLabel.Parent then
+                textLabel.Text = table.concat(Logger._lines, "\n")
+                scrollFrame.CanvasSize = UDim2.new(0, 0, 0, textLabel.TextBounds.Y + 20)
+            end
+            task.wait(2)
+        end
+    end)
+end
+
+-- Auto Execute Scripts
+UtilidadesFeatures.autoExec = {
+    scripts = Persist.get("auto_exec_scripts", {})
+}
+
+FeatureRegistry.register("auto_exec", {
+    name = "AUTO_EXEC",
+    category = "Utilidades",
+    defaultEnabled = false
+})
+
+function UtilidadesFeatures.addScript(name, content, isURL)
+    local script = {
+        name = name,
+        content = content,
+        isURL = isURL or false
+    }
+    table.insert(UtilidadesFeatures.autoExec.scripts, script)
+    Persist.set("auto_exec_scripts", UtilidadesFeatures.autoExec.scripts)
+end
+
+function UtilidadesFeatures.runScript(script)
+    if not script then return end
+    
+    task.spawn(function()
+        local success, err = pcall(function()
+            local code = script.content
+            if script.isURL then
+                code = game:HttpGet(script.content)
+            end
+            if #code > 10 then
+                loadstring(code)()
+                notify("Script", "Executed: " .. script.name)
+            else
+                error("Script content too short")
+            end
+        end)
+        
+        if not success then
+            notify("Script Error", "Failed: " .. script.name .. " - " .. tostring(err))
+        end
+    end)
+end
+
+function UtilidadesFeatures.deleteScript(index)
+    if UtilidadesFeatures.autoExec.scripts[index] then
+        local name = UtilidadesFeatures.autoExec.scripts[index].name
+        table.remove(UtilidadesFeatures.autoExec.scripts, index)
+        Persist.set("auto_exec_scripts", UtilidadesFeatures.autoExec.scripts)
+        notify("Script", "Deleted: " .. name)
+    end
+end
+
+-- Theme Toggle
+UtilidadesFeatures.theme = {
+    isDark = Persist.get("theme_dark", true)
+}
+
+-- Light theme colors
+local COLORS_LIGHT = {
+    BG_MAIN = Color3.fromRGB(240,240,245),
+    BG_TOP  = Color3.fromRGB(220,220,230),
+    BG_LEFT = Color3.fromRGB(230,230,235),
+    BG_RIGHT= Color3.fromRGB(235,235,240),
+    BTN     = Color3.fromRGB(200,200,210),
+    BTN_HOVER = Color3.fromRGB(180,180,190),
+    BTN_ACTIVE= Color3.fromRGB(90,140,255),
+    BTN_DANGER= Color3.fromRGB(220,80,80),
+    BTN_MINI  = Color3.fromRGB(190,190,200),
+    ACCENT    = Color3.fromRGB(90,140,255),
+    SLIDER_BG = Color3.fromRGB(180,180,190),
+    SLIDER_FILL=Color3.fromRGB(90,140,255),
+    SLIDER_KNOB= Color3.fromRGB(60,60,80),
+    TEXT_DIM  = Color3.fromRGB(60,60,70),
+    TEXT_SUB  = Color3.fromRGB(80,80,90),
+}
+
+FeatureRegistry.register("theme_toggle", {
+    name = "THEME_TOGGLE",
+    category = "Utilidades",
+    defaultEnabled = false
+})
+
+function UtilidadesFeatures.toggleTheme()
+    UtilidadesFeatures.theme.isDark = not UtilidadesFeatures.theme.isDark
+    Persist.set("theme_dark", UtilidadesFeatures.theme.isDark)
+    
+    -- Update COLORS table
+    local newColors = UtilidadesFeatures.theme.isDark and {
+        BG_MAIN = Color3.fromRGB(25,25,32),
+        BG_TOP  = Color3.fromRGB(38,38,50),
+        BG_LEFT = Color3.fromRGB(30,30,40),
+        BG_RIGHT= Color3.fromRGB(32,32,44),
+        BTN     = Color3.fromRGB(52,52,60),
+        BTN_HOVER = Color3.fromRGB(66,66,76),
+        BTN_ACTIVE= Color3.fromRGB(90,140,255),
+        BTN_DANGER= Color3.fromRGB(120,55,55),
+        BTN_MINI  = Color3.fromRGB(40,48,62),
+        ACCENT    = Color3.fromRGB(90,140,255),
+        SLIDER_BG = Color3.fromRGB(60,60,72),
+        SLIDER_FILL=Color3.fromRGB(90,140,255),
+        SLIDER_KNOB= Color3.fromRGB(200,200,220),
+        TEXT_DIM  = Color3.fromRGB(180,180,190),
+        TEXT_SUB  = Color3.fromRGB(150,150,160),
+    } or COLORS_LIGHT
+    
+    for key, value in pairs(newColors) do
+        COLORS[key] = value
+    end
+    
+    notify("Theme", "Theme switched to " .. (UtilidadesFeatures.theme.isDark and "Dark" or "Light"))
+    
+    -- Refresh UI if it exists
+    if UI.Screen and UI.Screen.Parent then
+        UI.create() -- Recreate UI with new colors
+    end
+end
+
+------------------------------------------------------------
 -- UI
 ------------------------------------------------------------
 local UI = {
@@ -1702,23 +2394,580 @@ function UI.generateMovimentoUI(featureId, feature, parent, yPos)
 end
 
 function UI.generateTeleporteUI(featureId, feature, parent, yPos)
-    -- Placeholder for teleporte features
-    UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    if featureId == "teleport_player" then
+        -- Player selection and teleport
+        local refreshBtn = UIHelpers.createButton(parent, L("REFRESH_PLAYERS"), function()
+            TeleporteFeatures.refreshPlayerList()
+        end, UDim2.new(0, scale(20), 0, yPos))
+        
+        local playerList = UIHelpers.createLabel(parent, "Select player...", 
+            UDim2.new(0, scale(150), 0, yPos), UDim2.new(0, scale(200), 0, scale(20)))
+        
+        local teleportBtn = UIHelpers.createButton(parent, L("WAYPOINT_TELEPORT"), function()
+            if TeleporteFeatures.teleportPlayer.selectedPlayer then
+                TeleporteFeatures.teleportToPlayer(TeleporteFeatures.teleportPlayer.selectedPlayer)
+            end
+        end, UDim2.new(0, scale(20), 0, yPos + 30))
+        
+    elseif featureId == "waypoints" then
+        -- Waypoint management
+        local nameBox = UIHelpers.createTextBox(parent, L("WAYPOINT_NAME"), 
+            UDim2.new(0, scale(20), 0, yPos), UDim2.new(0, scale(150), 0, scale(26)))
+        
+        local addBtn = UIHelpers.createButton(parent, L("WAYPOINT_ADD"), function()
+            local name = nameBox.Text ~= "" and nameBox.Text or nil
+            if TeleporteFeatures.addWaypoint(name) then
+                nameBox.Text = ""
+            end
+        end, UDim2.new(0, scale(180), 0, yPos))
+        
+        -- Waypoint list would need a scrolling frame - simplified for now
+        local listLabel = UIHelpers.createLabel(parent, 
+            #TeleporteFeatures.waypoints.list .. " waypoints saved",
+            UDim2.new(0, scale(20), 0, yPos + 35))
+        
+    elseif featureId == "rejoin" then
+        UIHelpers.createButton(parent, L("REJOIN"), function()
+            TeleporteFeatures.rejoin()
+        end, UDim2.new(0, scale(20), 0, yPos))
+        
+    elseif featureId == "server_hop" then
+        UIHelpers.createButton(parent, L("SERVER_HOP"), function()
+            TeleporteFeatures.serverHop()
+        end, UDim2.new(0, scale(20), 0, yPos))
+        
+    else
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    end
 end
 
 function UI.generateVisualUI(featureId, feature, parent, yPos)
-    -- Placeholder for visual features
-    UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    if featureId == "fov" then
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+        UIHelpers.createSliderFeature(parent, "fov", 30, 120, 1, 
+            UDim2.new(0, scale(170), 0, yPos))
+            
+    elseif featureId == "esp" then
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+        UIHelpers.createSliderFeature(parent, "esp_distance", 100, 1000, 50, 
+            UDim2.new(0, scale(170), 0, yPos))
+            
+    else
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    end
 end
 
 function UI.generateUtilidadesUI(featureId, feature, parent, yPos)
-    -- Placeholder for utilidades features
-    UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    if featureId == "logger_ui" then
+        UIHelpers.createButton(parent, L("LOGGER_UI"), function()
+            UtilidadesFeatures.createLoggerPanel()
+        end, UDim2.new(0, scale(20), 0, yPos))
+        
+    elseif featureId == "auto_exec" then
+        -- Simplified auto exec UI
+        local scriptBox = UIHelpers.createTextBox(parent, "Script name or URL", 
+            UDim2.new(0, scale(20), 0, yPos), UDim2.new(0, scale(200), 0, scale(26)))
+        
+        local addBtn = UIHelpers.createButton(parent, L("ADD_SCRIPT"), function()
+            local content = scriptBox.Text
+            if content ~= "" then
+                local isURL = content:find("http") == 1
+                UtilidadesFeatures.addScript(content, content, isURL)
+                scriptBox.Text = ""
+            end
+        end, UDim2.new(0, scale(230), 0, yPos))
+        
+        local countLabel = UIHelpers.createLabel(parent, 
+            #UtilidadesFeatures.autoExec.scripts .. " scripts saved",
+            UDim2.new(0, scale(20), 0, yPos + 35))
+            
+    elseif featureId == "theme_toggle" then
+        UIHelpers.createButton(parent, L("THEME_TOGGLE"), function()
+            UtilidadesFeatures.toggleTheme()
+        end, UDim2.new(0, scale(20), 0, yPos))
+        
+    else
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    end
+end
+
+------------------------------------------------------------
+-- DEV CATEGORY FEATURES
+------------------------------------------------------------
+local DevFeatures = {}
+
+-- Simple Explorer
+DevFeatures.explorer = {
+    window = nil,
+    selectedInstance = nil
+}
+
+FeatureRegistry.register("explorer", {
+    name = "EXPLORER", 
+    category = "Dev",
+    defaultEnabled = false
+})
+
+function DevFeatures.createExplorer()
+    if DevFeatures.explorer.window then return end
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ExplorerWindow"
+    screenGui.ResetOnSpawn = false
+    safeParent(screenGui)
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, scale(350), 0, scale(400))
+    frame.Position = UDim2.new(0.5, -scale(175), 0.5, -scale(200))
+    frame.BackgroundColor3 = COLORS.BG_MAIN
+    frame.Parent = screenGui
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, scale(30))
+    title.BackgroundColor3 = COLORS.BG_TOP
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = CONFIG.FONT_MAIN_SIZE
+    title.Text = L("EXPLORER")
+    title.Parent = frame
+    Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+    
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -scale(10), 1, -scale(70))
+    scrollFrame.Position = UDim2.new(0, scale(5), 0, scale(35))
+    scrollFrame.BackgroundTransparency = 1
+    scrollFrame.ScrollBarThickness = 6
+    scrollFrame.Parent = frame
+    
+    local layout = Instance.new("UIListLayout", scrollFrame)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 2)
+    
+    local function addExplorerItem(name, instance, depth)
+        depth = depth or 0
+        if depth > 2 then return end -- Limit depth for performance
+        
+        local item = Instance.new("TextButton")
+        item.Size = UDim2.new(1, -scale(depth * 20), 0, scale(20))
+        item.Position = UDim2.new(0, scale(depth * 20), 0, 0)
+        item.BackgroundColor3 = depth % 2 == 0 and COLORS.BTN or COLORS.BG_MAIN
+        item.TextColor3 = Color3.new(1, 1, 1)
+        item.Font = Enum.Font.Code
+        item.TextSize = CONFIG.FONT_LABEL_SIZE
+        item.Text = ("  "):rep(depth) .. name .. " (" .. instance.ClassName .. ")"
+        item.TextXAlignment = Enum.TextXAlignment.Left
+        item.Parent = scrollFrame
+        
+        item.MouseButton1Click:Connect(function()
+            DevFeatures.explorer.selectedInstance = instance
+            -- Update property viewer if it exists
+            if DevFeatures.propertyViewer.window then
+                DevFeatures.updatePropertyViewer()
+            end
+        end)
+        
+        -- Add children (limited depth)
+        if depth < 2 then
+            for _, child in pairs(instance:GetChildren()) do
+                addExplorerItem(child.Name, child, depth + 1)
+            end
+        end
+    end
+    
+    -- Add main services
+    addExplorerItem("Workspace", workspace, 0)
+    addExplorerItem("Players", Players, 0)
+    addExplorerItem("ReplicatedStorage", game:GetService("ReplicatedStorage"), 0)
+    
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        scrollFrame.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y)
+    end)
+    
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, scale(60), 0, scale(25))
+    closeBtn.Position = UDim2.new(1, -scale(65), 1, -scale(30))
+    closeBtn.Text = L("BTN_CLOSE")
+    closeBtn.BackgroundColor3 = COLORS.BTN_DANGER
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Font = Enum.Font.Gotham
+    closeBtn.TextSize = CONFIG.FONT_LABEL_SIZE
+    closeBtn.Parent = frame
+    styleButton(closeBtn, {danger = true})
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+        DevFeatures.explorer.window = nil
+    end)
+    
+    DevFeatures.explorer.window = screenGui
+end
+
+-- Property Viewer  
+DevFeatures.propertyViewer = {
+    window = nil,
+    textLabel = nil
+}
+
+FeatureRegistry.register("property_viewer", {
+    name = "PROPERTY_VIEWER",
+    category = "Dev", 
+    defaultEnabled = false
+})
+
+function DevFeatures.createPropertyViewer()
+    if DevFeatures.propertyViewer.window then return end
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PropertyViewer"
+    screenGui.ResetOnSpawn = false
+    safeParent(screenGui)
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, scale(300), 0, scale(250))
+    frame.Position = UDim2.new(0.5, scale(200), 0.5, -scale(125))
+    frame.BackgroundColor3 = COLORS.BG_MAIN
+    frame.Parent = screenGui
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, scale(30))
+    title.BackgroundColor3 = COLORS.BG_TOP
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = CONFIG.FONT_MAIN_SIZE
+    title.Text = L("PROPERTY_VIEWER")
+    title.Parent = frame
+    Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, -scale(10), 1, -scale(65))
+    textLabel.Position = UDim2.new(0, scale(5), 0, scale(35))
+    textLabel.BackgroundTransparency = 1
+    textLabel.TextColor3 = COLORS.TEXT_DIM
+    textLabel.Font = Enum.Font.Code
+    textLabel.TextSize = CONFIG.FONT_LABEL_SIZE
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextYAlignment = Enum.TextYAlignment.Top
+    textLabel.TextWrapped = true
+    textLabel.Text = "Select an instance in Explorer"
+    textLabel.Parent = frame
+    
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, scale(60), 0, scale(25))
+    closeBtn.Position = UDim2.new(1, -scale(65), 1, -scale(30))
+    closeBtn.Text = L("BTN_CLOSE")
+    closeBtn.BackgroundColor3 = COLORS.BTN_DANGER
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Font = Enum.Font.Gotham
+    closeBtn.TextSize = CONFIG.FONT_LABEL_SIZE
+    closeBtn.Parent = frame
+    styleButton(closeBtn, {danger = true})
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+        DevFeatures.propertyViewer.window = nil
+    end)
+    
+    DevFeatures.propertyViewer.window = screenGui
+    DevFeatures.propertyViewer.textLabel = textLabel
+end
+
+function DevFeatures.updatePropertyViewer()
+    if not DevFeatures.propertyViewer.textLabel then return end
+    
+    local instance = DevFeatures.explorer.selectedInstance
+    if not instance then
+        DevFeatures.propertyViewer.textLabel.Text = "No instance selected"
+        return
+    end
+    
+    local info = {
+        "Name: " .. tostring(instance.Name),
+        "ClassName: " .. instance.ClassName,
+        "Parent: " .. (instance.Parent and instance.Parent.Name or "nil"),
+    }
+    
+    if instance:IsA("BasePart") then
+        table.insert(info, "Position: " .. tostring(instance.Position))
+        table.insert(info, "Size: " .. tostring(instance.Size))
+    end
+    
+    table.insert(info, "Children: " .. #instance:GetChildren())
+    
+    DevFeatures.propertyViewer.textLabel.Text = table.concat(info, "\n")
+end
+
+-- Instance Stats
+DevFeatures.stats = {
+    window = nil,
+    updateConnection = nil
+}
+
+FeatureRegistry.register("instance_stats", {
+    name = "INSTANCE_STATS",
+    category = "Dev",
+    defaultEnabled = false
+})
+
+function DevFeatures.createStatsWindow()
+    if DevFeatures.stats.window then return end
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "InstanceStats"
+    screenGui.ResetOnSpawn = false
+    safeParent(screenGui)
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, scale(200), 0, scale(120))
+    frame.Position = UDim2.new(1, -scale(210), 0, scale(10))
+    frame.BackgroundColor3 = COLORS.BG_MAIN
+    frame.Parent = screenGui
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+    
+    local statsLabel = Instance.new("TextLabel")
+    statsLabel.Size = UDim2.new(1, -scale(10), 1, -scale(10))
+    statsLabel.Position = UDim2.new(0, scale(5), 0, scale(5))
+    statsLabel.BackgroundTransparency = 1
+    statsLabel.TextColor3 = COLORS.TEXT_DIM
+    statsLabel.Font = Enum.Font.Code
+    statsLabel.TextSize = CONFIG.FONT_LABEL_SIZE
+    statsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statsLabel.TextYAlignment = Enum.TextYAlignment.Top
+    statsLabel.TextWrapped = true
+    statsLabel.Parent = frame
+    
+    DevFeatures.stats.window = screenGui
+    
+    -- Update stats every few seconds
+    DevFeatures.stats.updateConnection = task.spawn(function()
+        while DevFeatures.stats.window do
+            local stats = {
+                "FPS: " .. (math.floor(1/RunService.Heartbeat:Wait())),
+                "Memory: " .. math.floor(collectgarbage("count")) .. " KB",
+                "Instances: " .. #game:GetDescendants()
+            }
+            
+            if statsLabel.Parent then
+                statsLabel.Text = table.concat(stats, "\n")
+            end
+            
+            task.wait(3)
+        end
+    end)
 end
 
 function UI.generateDevUI(featureId, feature, parent, yPos)
-    -- Placeholder for dev features
-    UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    if featureId == "explorer" then
+        UIHelpers.createButton(parent, L("EXPLORER"), function()
+            DevFeatures.createExplorer()
+        end, UDim2.new(0, scale(20), 0, yPos))
+        
+    elseif featureId == "property_viewer" then
+        UIHelpers.createButton(parent, L("PROPERTY_VIEWER"), function()
+            DevFeatures.createPropertyViewer()
+        end, UDim2.new(0, scale(20), 0, yPos))
+        
+    elseif featureId == "instance_stats" then
+        UIHelpers.createButton(parent, L("INSTANCE_STATS"), function()
+            DevFeatures.createStatsWindow()
+        end, UDim2.new(0, scale(20), 0, yPos))
+        
+    else
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    end
+end
+
+------------------------------------------------------------
+-- SCRIPTS CATEGORY FEATURES  
+------------------------------------------------------------
+
+-- Register Infinite Yield feature (UI handled in generateScriptsUI)
+FeatureRegistry.register("infiniteyield", {
+    name = "BTN_IY_LOAD",
+    category = "Scripts",
+    defaultEnabled = false
+})
+
+-- Generic Script Loader
+local ScriptsFeatures = {
+    favorites = Persist.get("script_favorites", {})
+}
+
+function ScriptsFeatures.addToFavorites(name, content)
+    local script = { name = name, content = content }
+    table.insert(ScriptsFeatures.favorites, script)
+    Persist.set("script_favorites", ScriptsFeatures.favorites)
+end
+
+function ScriptsFeatures.runScript(content)
+    task.spawn(function()
+        local success, err = pcall(function()
+            loadstring(content)()
+            notify("Script", "Script executed successfully")
+        end)
+        if not success then
+            notify("Script Error", tostring(err))
+        end
+    end)
+end
+
+function ScriptsFeatures.createScriptLoader()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ScriptLoader"
+    screenGui.ResetOnSpawn = false
+    safeParent(screenGui)
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, scale(400), 0, scale(300))
+    frame.Position = UDim2.new(0.5, -scale(200), 0.5, -scale(150))
+    frame.BackgroundColor3 = COLORS.BG_MAIN
+    frame.Parent = screenGui
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, scale(30))
+    title.BackgroundColor3 = COLORS.BG_TOP
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = CONFIG.FONT_MAIN_SIZE
+    title.Text = L("SCRIPT_LOADER")
+    title.Parent = frame
+    Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+    
+    local scriptBox = Instance.new("TextBox")
+    scriptBox.Size = UDim2.new(1, -scale(20), 0, scale(150))
+    scriptBox.Position = UDim2.new(0, scale(10), 0, scale(40))
+    scriptBox.BackgroundColor3 = COLORS.BTN
+    scriptBox.TextColor3 = Color3.new(1, 1, 1)
+    scriptBox.Font = Enum.Font.Code
+    scriptBox.TextSize = CONFIG.FONT_LABEL_SIZE
+    scriptBox.PlaceholderText = "Enter Lua code here..."
+    scriptBox.Text = ""
+    scriptBox.ClearTextOnFocus = false
+    scriptBox.MultiLine = true
+    scriptBox.TextXAlignment = Enum.TextXAlignment.Left
+    scriptBox.TextYAlignment = Enum.TextYAlignment.Top
+    scriptBox.Parent = frame
+    Instance.new("UICorner", scriptBox).CornerRadius = UDim.new(0, 6)
+    
+    local runBtn = Instance.new("TextButton")
+    runBtn.Size = UDim2.new(0, scale(80), 0, scale(30))
+    runBtn.Position = UDim2.new(0, scale(10), 1, -scale(40))
+    runBtn.Text = L("RUN_SCRIPT")
+    runBtn.BackgroundColor3 = COLORS.BTN
+    runBtn.TextColor3 = Color3.new(1, 1, 1)
+    runBtn.Font = Enum.Font.Gotham
+    runBtn.TextSize = CONFIG.FONT_MAIN_SIZE
+    runBtn.Parent = frame
+    styleButton(runBtn)
+    
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, scale(60), 0, scale(30))
+    closeBtn.Position = UDim2.new(1, -scale(70), 1, -scale(40))
+    closeBtn.Text = L("BTN_CLOSE")
+    closeBtn.BackgroundColor3 = COLORS.BTN_DANGER
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Font = Enum.Font.Gotham
+    closeBtn.TextSize = CONFIG.FONT_MAIN_SIZE
+    closeBtn.Parent = frame
+    styleButton(closeBtn, {danger = true})
+    
+    runBtn.MouseButton1Click:Connect(function()
+        if scriptBox.Text ~= "" then
+            ScriptsFeatures.runScript(scriptBox.Text)
+        end
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+end
+
+------------------------------------------------------------
+-- UI
+------------------------------------------------------------
+local UI = {
+    Screen = nil,
+    FloatingGui = nil,
+    FloatingButton = nil,
+    Panels = {},
+    CurrentPanel = nil,
+    Translatables = {},
+    Elements = {},
+    Destroyed = false,
+    PanelButtons = {},
+}
+
+local function markTrans(instance,key,...)
+    table.insert(UI.Translatables,{instance=instance,key=key,args={...}})
+end
+
+function UI.applyLanguage()
+    if not activePack then return end
+    for _,d in ipairs(UI.Translatables) do
+        local inst=d.instance
+        if inst and inst.Parent and (inst:IsA("TextLabel") or inst:IsA("TextButton")) then
+            local txt = (#d.args>0) and L(d.key, table.unpack(d.args)) or L(d.key)
+            inst.Text = txt
+        end
+    end
+    if UI.Elements.Title then UI.Elements.Title.Text = L("UI_TITLE", VERSION) end
+    if UI.Elements.FlyToggle then
+        UI.Elements.FlyToggle.Text = Fly.active and L("FLY_TOGGLE_ON") or L("FLY_TOGGLE_OFF")
+    end
+    if UI.Elements.SpeedLabel then
+        UI.Elements.SpeedLabel.Text = L("FLY_SPEED")..": "..Fly.speed
+    end
+    if UI.Elements.SliderHint then
+        UI.Elements.SliderHint.Text = L("SLIDER_HINT")
+    end
+    if UI.Elements.ModeButton then
+        UI.Elements.ModeButton.Text = Fly.full3D and L("FLY_MODE_3D_ON") or L("FLY_MODE_3D_OFF")
+    end
+end
+
+local function styleButton(btn, opts)
+    btn.AutoButtonColor = false
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = CONFIG.FONT_MAIN_SIZE
+    btn.BackgroundColor3 = COLORS.BTN
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,6)
+    corner.Parent = btn
+    if opts and opts.danger then
+        btn.BackgroundColor3 = COLORS.BTN_DANGER
+    end
+    btn.MouseEnter:Connect(function()
+        if not (opts and opts.activeIndicator) then
+            btn.BackgroundColor3 = COLORS.BTN_HOVER
+        end
+    end)
+    btn.MouseLeave:Connect(function()
+        if opts and opts.activeIndicator and opts.activeIndicator()==true then
+            btn.BackgroundColor3 = COLORS.BTN_ACTIVE
+        else
+            btn.BackgroundColor3 = opts and opts.danger and COLORS.BTN_DANGER or COLORS.BTN
+        end
+    end)
+end
+
+local function highlightPanelButton(activeBtn)
+    for btn,data in pairs(UI.PanelButtons) do
+        if btn == activeBtn then
+            btn.BackgroundColor3 = COLORS.BTN_ACTIVE
+        else
+            btn.BackgroundColor3 = COLORS.BTN
+        end
+    end
+end
+
+local function showPanel(panel)
+    UI.CurrentPanel = panel
+    for _,p in pairs(UI.Panels) do
+        p.Visible = (p == panel)
+    end
 end
 
 function UI.generateScriptsUI(featureId, feature, parent, yPos)
@@ -1757,6 +3006,20 @@ function UI.generateScriptsUI(featureId, feature, parent, yPos)
                 loading=false
             end)
         end, UDim2.new(0, scale(170), 0, yPos))
+        
+    elseif featureId == "script_loader" then
+        UIHelpers.createButton(parent, L("SCRIPT_LOADER"), function()
+            ScriptsFeatures.createScriptLoader()
+        end, UDim2.new(0, scale(20), 0, yPos))
+        
+        local favoritesLabel = UIHelpers.createLabel(parent,
+            #ScriptsFeatures.favorites .. " favorites saved",
+            UDim2.new(0, scale(170), 0, yPos))
+        
+    else
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    end
+end
         
     else
         UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
@@ -1875,9 +3138,10 @@ end
 -- INICIALIZAÇÃO
 ------------------------------------------------------------
 
--- Register Infinite Yield feature
-FeatureRegistry.register("infiniteyield", {
-    name = "BTN_IY_LOAD",
+-- Register additional features not registered inline
+
+FeatureRegistry.register("script_loader", {
+    name = "SCRIPT_LOADER",
     category = "Scripts",
     defaultEnabled = false
 })
@@ -1913,4 +3177,9 @@ _G.__UNIVERSAL_HUB_EXPORTS = {
     FeatureRegistry = FeatureRegistry,
     HotkeyManager = HotkeyManager,
     UIHelpers = UIHelpers,
+    MovimentoFeatures = MovimentoFeatures,
+    TeleporteFeatures = TeleporteFeatures,
+    VisualFeatures = VisualFeatures,
+    UtilidadesFeatures = UtilidadesFeatures,
+    DevFeatures = DevFeatures,
 }
