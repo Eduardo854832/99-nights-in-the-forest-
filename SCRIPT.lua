@@ -2,8 +2,6 @@
     Universal Roblox UI Script
     Autor: Eduardo854832
     Data: 2025-08-17
-    
-    Interface baseada no estilo do redz Hub
 ]]
 
 local Players = game:GetService("Players")
