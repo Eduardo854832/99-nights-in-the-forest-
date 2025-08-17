@@ -4,7 +4,7 @@ Histórico de mudanças do projeto (versões mais recentes primeiro).
 
 ---
 
-## 0.9.4-mobile
+## 0.8.1-mobile
 Adicionado
 - Layout responsivo: cálculo dinâmico de largura/altura da janela e largura da sidebar (`computeLayout`) baseado em `ViewportSize`.
 - Suporte a redimensionamento em tempo real (listener em `ViewportSize`) mantendo UI adaptada a mudanças de orientação / tamanho.
@@ -48,7 +48,7 @@ Interno
 
 ---
 
-## 0.9.1
+## 0.8.0
 Adicionado
 - Comando `/uu diag` para diagnóstico rápido (FPS, Mem, Ping, Players, estados de features) em notificação + logger.
 - Chave de tradução `LEGACY_FLY_NOTE` (pt/en) e chave `DIAG_MESSAGE`.
@@ -80,7 +80,7 @@ Interno
 
 ---
 
-## 0.9.0
+## 0.7.1
 Adicionado
 - Lazy loading de painéis (constroem só ao primeiro expandir).
 - Sistema de temas (dark/light) com persistência e comando `/uu theme`.
@@ -114,7 +114,7 @@ Interno
 
 ---
 
-## 0.8.0 (Refatoração Arquitetural – “Fase 1”)
+## 0.7.0 (Refatoração Arquitetural – “Fase 1”)
 Adicionado
 - Scheduler único de métricas (FPS, Mem, Ping, Players).
 - `Maid` para gerenciamento e limpeza de conexões/instâncias (reexecução segura).
