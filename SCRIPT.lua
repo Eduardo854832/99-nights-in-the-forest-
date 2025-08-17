@@ -1,12 +1,3 @@
-----------------------------------------------------------------
--- GUARD
-----------------------------------------------------------------
-if _G.__UNIVERSAL_HUB_ALREADY then
-    warn("[UniversalHub] Já carregado. Abortando segunda carga.")
-    return _G.__UNIVERSAL_HUB_EXPORTS
-end
-_G.__UNIVERSAL_HUB_ALREADY = true
-
 local VERSION = "2.0.0"
 
 ----------------------------------------------------------------
