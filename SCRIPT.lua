@@ -46,10 +46,11 @@ Persist.load()
 ----------------------------------------------------------------
 local Logger = { _max=120, _lines={}, _dirty=false }
 function Logger.Log(level,msg)
-    local line = os.date("%H:%M:%S").." ["..level.."] ".tostring(msg)
+    -- Corrigido operador de concatenação antes de tostring(msg)
+    local line = os.date("%H:%M:%S").. " ["..level.."] " ..tostring(msg)
     table.insert(Logger._lines,line)
     if #Logger._lines>Logger._max then table.remove(Logger._lines,1) end
-    warn("[UU]["..level.."] "..msg)
+    warn("[UU]["..level.."] " ..tostring(msg))
     Logger._dirty=true
 end
 
@@ -116,7 +117,7 @@ local function L(k,...)
     local s=(pack and pack[k]) or k
     if s==k and not _missingLogged[k] then
         _missingLogged[k]=true
-        Logger.Log("I18N","Missing key: "..k)
+        Logger.Log("I18N","Missing key: " ..k)
     end
     if select("#",...)>0 then
         return string.format(s,...)
@@ -478,7 +479,7 @@ local function parseChat(msg)
         local ok,err=pcall(c.fn,args)
         if not ok then notify("UU","Error"); Logger.Log("ERR",err) end
     else
-        notify("UU","?")
+        notify("UU", "?")
     end
 end
 LocalPlayer.Chatted:Connect(parseChat)
