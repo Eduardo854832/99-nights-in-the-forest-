@@ -158,6 +158,195 @@ function Logger.Log(level, msg)
 end
 
 ------------------------------------------------------------
+-- EVENT BUS
+------------------------------------------------------------
+local EventBus = {
+    _listeners = {}
+}
+
+function EventBus.subscribe(event, callback)
+    if not EventBus._listeners[event] then
+        EventBus._listeners[event] = {}
+    end
+    table.insert(EventBus._listeners[event], callback)
+end
+
+function EventBus.publish(event, ...)
+    if EventBus._listeners[event] then
+        for _, callback in ipairs(EventBus._listeners[event]) do
+            pcall(callback, ...)
+        end
+    end
+end
+
+function EventBus.unsubscribe(event, callback)
+    if EventBus._listeners[event] then
+        for i, cb in ipairs(EventBus._listeners[event]) do
+            if cb == callback then
+                table.remove(EventBus._listeners[event], i)
+                break
+            end
+        end
+    end
+end
+
+------------------------------------------------------------
+-- FEATURE REGISTRY
+------------------------------------------------------------
+local FeatureRegistry = {
+    _features = {},
+    _categories = {
+        "Movimento",
+        "Teleporte", 
+        "Visual",
+        "Utilidades",
+        "Dev",
+        "Scripts"
+    }
+}
+
+function FeatureRegistry.register(featureId, config)
+    local feature = {
+        id = featureId,
+        name = config.name or featureId,
+        category = config.category or "Utilidades",
+        enabled = Persist.get("feature_" .. featureId, config.defaultEnabled or false),
+        hotkey = config.hotkey,
+        onEnable = config.onEnable,
+        onDisable = config.onDisable,
+        onToggle = config.onToggle,
+        persistState = config.persistState ~= false,
+        ui = config.ui or {}
+    }
+    
+    FeatureRegistry._features[featureId] = feature
+    EventBus.publish("FeatureRegistered", featureId, feature)
+    return feature
+end
+
+function FeatureRegistry.get(featureId)
+    return FeatureRegistry._features[featureId]
+end
+
+function FeatureRegistry.getByCategory(category)
+    local features = {}
+    for id, feature in pairs(FeatureRegistry._features) do
+        if feature.category == category then
+            features[id] = feature
+        end
+    end
+    return features
+end
+
+function FeatureRegistry.toggle(featureId)
+    local feature = FeatureRegistry._features[featureId]
+    if not feature then return false end
+    
+    feature.enabled = not feature.enabled
+    
+    if feature.persistState then
+        Persist.set("feature_" .. featureId, feature.enabled)
+    end
+    
+    if feature.enabled then
+        if feature.onEnable then
+            pcall(feature.onEnable)
+        end
+    else
+        if feature.onDisable then
+            pcall(feature.onDisable)
+        end
+    end
+    
+    if feature.onToggle then
+        pcall(feature.onToggle, feature.enabled)
+    end
+    
+    EventBus.publish("FeatureToggled", featureId, feature.enabled)
+    Logger.Log("FEATURE", featureId .. " " .. (feature.enabled and "enabled" or "disabled"))
+    return feature.enabled
+end
+
+function FeatureRegistry.isEnabled(featureId)
+    local feature = FeatureRegistry._features[featureId]
+    return feature and feature.enabled or false
+end
+
+function FeatureRegistry.setEnabled(featureId, enabled)
+    local feature = FeatureRegistry._features[featureId]
+    if not feature or feature.enabled == enabled then return end
+    
+    FeatureRegistry.toggle(featureId)
+end
+
+function FeatureRegistry.getAllCategories()
+    return FeatureRegistry._categories
+end
+
+------------------------------------------------------------
+-- HOTKEYS SYSTEM
+------------------------------------------------------------
+local HotkeyManager = {
+    _bindings = {},
+    _capturing = false,
+    _captureCallback = nil
+}
+
+function HotkeyManager.bind(featureId, keyCode)
+    -- Remove old binding if exists
+    HotkeyManager.unbind(featureId)
+    
+    if keyCode then
+        HotkeyManager._bindings[keyCode] = featureId
+        Persist.set("hotkey_" .. featureId, keyCode.Name)
+    end
+end
+
+function HotkeyManager.unbind(featureId)
+    for keyCode, boundFeatureId in pairs(HotkeyManager._bindings) do
+        if boundFeatureId == featureId then
+            HotkeyManager._bindings[keyCode] = nil
+            Persist.set("hotkey_" .. featureId, nil)
+            break
+        end
+    end
+end
+
+function HotkeyManager.getBinding(featureId)
+    for keyCode, boundFeatureId in pairs(HotkeyManager._bindings) do
+        if boundFeatureId == featureId then
+            return keyCode
+        end
+    end
+    return nil
+end
+
+function HotkeyManager.startCapture(callback)
+    HotkeyManager._capturing = true
+    HotkeyManager._captureCallback = callback
+end
+
+function HotkeyManager.stopCapture()
+    HotkeyManager._capturing = false
+    HotkeyManager._captureCallback = nil
+end
+
+-- Load saved hotkeys
+function HotkeyManager.loadSavedHotkeys()
+    for featureId, feature in pairs(FeatureRegistry._features) do
+        local savedKey = Persist.get("hotkey_" .. featureId, nil)
+        if savedKey then
+            local keyCode = Enum.KeyCode[savedKey]
+            if keyCode then
+                HotkeyManager._bindings[keyCode] = featureId
+            end
+        elseif feature.hotkey then
+            HotkeyManager.bind(featureId, feature.hotkey)
+        end
+    end
+end
+
+------------------------------------------------------------
 -- I18N
 ------------------------------------------------------------
 local Lang = {}
@@ -201,6 +390,68 @@ Lang.data = {
         FLOAT_TIP="Clique para abrir",
         SPEED_INPUT_INVALID="Valor inválido",
         FLY_MODE_CHANGED="Modo de voo: %s",
+        
+        -- Categories
+        CAT_MOVIMENTO="Movimento",
+        CAT_TELEPORTE="Teleporte",
+        CAT_VISUAL="Visual",
+        CAT_UTILIDADES="Utilidades", 
+        CAT_DEV="Dev",
+        CAT_SCRIPTS="Scripts",
+        
+        -- Movimento features
+        NOCLIP="Atravessar Paredes",
+        SPRINT="Sprint",
+        WALKSPEED="Velocidade Caminhada",
+        JUMPPOWER="Poder de Pulo",
+        HIGHJUMP="Pulo Alto",
+        GRAVITY="Gravidade",
+        WALKSPEED_PROTECTION="Proteção Velocidade",
+        SPRINT_MULTIPLIER="Multiplicador Sprint",
+        
+        -- Teleporte features  
+        TELEPORT_TO_PLAYER="Teletransportar para Jogador",
+        WAYPOINTS="Pontos de Referência",
+        REJOIN="Reconectar",
+        SERVER_HOP="Mudar Servidor",
+        WAYPOINT_ADD="Adicionar",
+        WAYPOINT_DELETE="Deletar",
+        WAYPOINT_TELEPORT="Ir para",
+        WAYPOINT_NAME="Nome do ponto:",
+        REFRESH_PLAYERS="Atualizar",
+        
+        -- Visual features
+        FOV="Campo de Visão", 
+        FREECAM="Câmera Livre",
+        ESP="ESP Jogadores",
+        HIGHLIGHTS="Destacar Jogadores",
+        DISTANCE_CAP="Limite Distância",
+        
+        -- Utilidades features
+        ANTI_AFK="Anti-AFK",
+        CHAT_NOTIFY="Notificar Chat",
+        LOGGER_UI="Painel de Logs",
+        AUTO_EXEC="Scripts Automáticos",
+        THEME_TOGGLE="Alternar Tema",
+        COPY_LOGS="Copiar Logs",
+        ADD_SCRIPT="Adicionar Script",
+        RUN_SCRIPT="Executar",
+        DELETE_SCRIPT="Deletar",
+        
+        -- Dev features
+        EXPLORER="Explorador",
+        PROPERTY_VIEWER="Visualizador de Propriedades", 
+        REMOTE_SPY="Espião de Remotos",
+        INSTANCE_STATS="Estatísticas",
+        REFRESH="Atualizar",
+        
+        -- Scripts features
+        SCRIPT_LOADER="Carregador de Scripts",
+        
+        -- Hotkeys
+        HOTKEY_CAPTURE="Capturar Tecla",
+        HOTKEY_NONE="Nenhuma",
+        HOTKEY_CAPTURING="Pressione uma tecla...",
     },
     en = {
         UI_TITLE="Universal Hub v%s",
@@ -241,6 +492,68 @@ Lang.data = {
         FLOAT_TIP="Click to open",
         SPEED_INPUT_INVALID="Invalid value",
         FLY_MODE_CHANGED="Fly mode: %s",
+        
+        -- Categories  
+        CAT_MOVIMENTO="Movement",
+        CAT_TELEPORTE="Teleport",
+        CAT_VISUAL="Visual",
+        CAT_UTILIDADES="Utilities",
+        CAT_DEV="Dev", 
+        CAT_SCRIPTS="Scripts",
+        
+        -- Movimento features
+        NOCLIP="Noclip",
+        SPRINT="Sprint", 
+        WALKSPEED="Walk Speed",
+        JUMPPOWER="Jump Power",
+        HIGHJUMP="High Jump",
+        GRAVITY="Gravity",
+        WALKSPEED_PROTECTION="Speed Protection",
+        SPRINT_MULTIPLIER="Sprint Multiplier",
+        
+        -- Teleporte features
+        TELEPORT_TO_PLAYER="Teleport to Player",
+        WAYPOINTS="Waypoints",
+        REJOIN="Rejoin",
+        SERVER_HOP="Server Hop",
+        WAYPOINT_ADD="Add",
+        WAYPOINT_DELETE="Delete", 
+        WAYPOINT_TELEPORT="Go to",
+        WAYPOINT_NAME="Waypoint name:",
+        REFRESH_PLAYERS="Refresh",
+        
+        -- Visual features
+        FOV="Field of View",
+        FREECAM="Freecam",
+        ESP="Player ESP", 
+        HIGHLIGHTS="Player Highlights",
+        DISTANCE_CAP="Distance Limit",
+        
+        -- Utilidades features  
+        ANTI_AFK="Anti-AFK",
+        CHAT_NOTIFY="Chat Notifications",
+        LOGGER_UI="Logger Panel",
+        AUTO_EXEC="Auto Execute Scripts",
+        THEME_TOGGLE="Toggle Theme",
+        COPY_LOGS="Copy Logs",
+        ADD_SCRIPT="Add Script", 
+        RUN_SCRIPT="Run",
+        DELETE_SCRIPT="Delete",
+        
+        -- Dev features
+        EXPLORER="Explorer",
+        PROPERTY_VIEWER="Property Viewer",
+        REMOTE_SPY="Remote Spy", 
+        INSTANCE_STATS="Instance Stats",
+        REFRESH="Refresh",
+        
+        -- Scripts features
+        SCRIPT_LOADER="Script Loader",
+        
+        -- Hotkeys
+        HOTKEY_CAPTURE="Capture Key",
+        HOTKEY_NONE="None",
+        HOTKEY_CAPTURING="Press a key...",
     }
 }
 
@@ -267,6 +580,171 @@ local function L(key, ...)
         return string.format(s,...)
     end
     return s
+end
+
+------------------------------------------------------------
+-- UI HELPER FACTORIES
+------------------------------------------------------------
+local UIHelpers = {}
+
+function UIHelpers.createToggle(parent, featureId, text, position)
+    local feature = FeatureRegistry.get(featureId)
+    if not feature then return nil end
+    
+    local toggle = Instance.new("TextButton")
+    toggle.Size = UDim2.new(0, scale(140), 0, scale(38))
+    toggle.Position = position or UDim2.new(0, scale(20), 0, scale(20))
+    toggle.BackgroundColor3 = COLORS.BTN
+    toggle.TextColor3 = Color3.new(1,1,1)
+    toggle.Font = Enum.Font.Gotham
+    toggle.TextSize = CONFIG.FONT_MAIN_SIZE
+    toggle.Text = text or L(feature.name)
+    toggle.Parent = parent
+    styleButton(toggle, {
+        activeIndicator = function()
+            return FeatureRegistry.isEnabled(featureId)
+        end
+    })
+    
+    -- Add hotkey button
+    local hotkeyBtn = Instance.new("TextButton")
+    hotkeyBtn.Size = UDim2.new(0, scale(20), 0, scale(20))
+    hotkeyBtn.Position = UDim2.new(1, -scale(25), 0, scale(2))
+    hotkeyBtn.BackgroundColor3 = COLORS.BTN
+    hotkeyBtn.TextColor3 = Color3.new(1,1,1)
+    hotkeyBtn.Font = Enum.Font.Code
+    hotkeyBtn.TextSize = CONFIG.FONT_LABEL_SIZE
+    hotkeyBtn.Text = "⌘"
+    hotkeyBtn.Parent = toggle
+    Instance.new("UICorner", hotkeyBtn).CornerRadius = UDim.new(0,4)
+    
+    local function updateHotkeyText()
+        local binding = HotkeyManager.getBinding(featureId)
+        hotkeyBtn.Text = binding and binding.Name:sub(1,1) or "⌘"
+    end
+    updateHotkeyText()
+    
+    hotkeyBtn.MouseButton1Click:Connect(function()
+        if HotkeyManager._capturing then return end
+        hotkeyBtn.Text = "..."
+        HotkeyManager.startCapture(function(keyCode)
+            HotkeyManager.bind(featureId, keyCode)
+            updateHotkeyText()
+            HotkeyManager.stopCapture()
+        end)
+    end)
+    
+    toggle.MouseButton1Click:Connect(function()
+        FeatureRegistry.toggle(featureId)
+        -- Update button appearance will be handled by the activeIndicator
+    end)
+    
+    -- Subscribe to feature state changes
+    EventBus.subscribe("FeatureToggled", function(toggledFeatureId, enabled)
+        if toggledFeatureId == featureId then
+            if toggle.Parent then
+                toggle.BackgroundColor3 = enabled and COLORS.BTN_ACTIVE or COLORS.BTN
+            end
+        end
+    end)
+    
+    return toggle
+end
+
+function UIHelpers.createSliderFeature(parent, featureId, min, max, step, position)
+    local feature = FeatureRegistry.get(featureId)
+    if not feature then return nil end
+    
+    step = step or 1
+    local currentValue = Persist.get(featureId .. "_value", min)
+    
+    local holder = Instance.new("Frame")
+    holder.Size = UDim2.new(0, scale(320), 0, scale(80))
+    holder.Position = position or UDim2.new(0, scale(20), 0, scale(20))
+    holder.BackgroundTransparency = 1
+    holder.Parent = parent
+    
+    -- Label
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, scale(20))
+    label.Position = UDim2.new(0, 0, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = CONFIG.FONT_LABEL_SIZE + 1
+    label.TextColor3 = COLORS.TEXT_DIM
+    label.Text = L(feature.name) .. ": " .. currentValue
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = holder
+    
+    -- Create slider
+    local slider = createSlider(holder, min, max, 
+        function() return currentValue end,
+        function(value) 
+            currentValue = math.floor(value / step) * step
+            Persist.set(featureId .. "_value", currentValue)
+            label.Text = L(feature.name) .. ": " .. currentValue
+            
+            -- Call feature's setValue if it exists
+            if feature.setValue then
+                pcall(feature.setValue, currentValue)
+            end
+            
+            EventBus.publish("FeatureValueChanged", featureId, currentValue)
+        end
+    )
+    
+    slider.Position = UDim2.new(0, 0, 0, scale(25))
+    
+    return holder
+end
+
+function UIHelpers.createButton(parent, text, callback, position)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, scale(120), 0, scale(32))
+    btn.Position = position or UDim2.new(0, scale(20), 0, scale(20))
+    btn.BackgroundColor3 = COLORS.BTN
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = CONFIG.FONT_MAIN_SIZE
+    btn.Text = text
+    btn.Parent = parent
+    styleButton(btn)
+    
+    if callback then
+        btn.MouseButton1Click:Connect(callback)
+    end
+    
+    return btn
+end
+
+function UIHelpers.createLabel(parent, text, position, size)
+    local label = Instance.new("TextLabel")
+    label.Size = size or UDim2.new(0, scale(200), 0, scale(20))
+    label.Position = position or UDim2.new(0, scale(20), 0, scale(20))
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = CONFIG.FONT_LABEL_SIZE
+    label.TextColor3 = COLORS.TEXT_DIM
+    label.Text = text
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = parent
+    return label
+end
+
+function UIHelpers.createTextBox(parent, placeholder, position, size)
+    local box = Instance.new("TextBox")
+    box.Size = size or UDim2.new(0, scale(150), 0, scale(26))
+    box.Position = position or UDim2.new(0, scale(20), 0, scale(20))
+    box.BackgroundColor3 = COLORS.BTN
+    box.TextColor3 = Color3.new(1,1,1)
+    box.Font = Enum.Font.Code
+    box.TextSize = CONFIG.FONT_LABEL_SIZE
+    box.PlaceholderText = placeholder or ""
+    box.Text = ""
+    box.ClearTextOnFocus = false
+    box.Parent = parent
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,6)
+    return box
 end
 
 ------------------------------------------------------------
@@ -417,6 +895,241 @@ LocalPlayer.CharacterAdded:Connect(function()
         Fly.enable()
     end
 end)
+
+------------------------------------------------------------
+-- CORE FEATURES IMPLEMENTATION
+------------------------------------------------------------
+
+-- Register Fly feature in the registry
+FeatureRegistry.register("fly", {
+    name = "FLY_TOGGLE_OFF",
+    category = "Movimento", 
+    defaultEnabled = false,
+    hotkey = CONFIG.HOTKEY_TOGGLE_FLY,
+    onEnable = function() Fly.enable() end,
+    onDisable = function() Fly.disable() end,
+    onToggle = function(enabled)
+        if UI.Elements.FlyToggle then
+            UI.Elements.FlyToggle.Text = enabled and L("FLY_TOGGLE_ON") or L("FLY_TOGGLE_OFF")
+        end
+    end
+})
+
+-- Movimento category features
+local MovimentoFeatures = {}
+
+-- Noclip
+MovimentoFeatures.noclip = {
+    active = false,
+    originalCanCollide = {}
+}
+
+FeatureRegistry.register("noclip", {
+    name = "NOCLIP",
+    category = "Movimento",
+    defaultEnabled = false,
+    hotkey = Enum.KeyCode.RightControl,
+    onEnable = function()
+        MovimentoFeatures.noclip.active = true
+        MovimentoFeatures.noclip.originalCanCollide = {}
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in pairs(char:GetChildren()) do
+                if part:IsA("BasePart") then
+                    MovimentoFeatures.noclip.originalCanCollide[part] = part.CanCollide
+                    part.CanCollide = false
+                end
+            end
+        end
+    end,
+    onDisable = function()
+        MovimentoFeatures.noclip.active = false
+        for part, originalValue in pairs(MovimentoFeatures.noclip.originalCanCollide) do
+            if part and part.Parent then
+                part.CanCollide = originalValue
+            end
+        end
+        MovimentoFeatures.noclip.originalCanCollide = {}
+    end
+})
+
+-- Stepped connection for noclip
+RunService.Stepped:Connect(function()
+    if MovimentoFeatures.noclip.active then
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in pairs(char:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end)
+
+-- Sprint
+MovimentoFeatures.sprint = {
+    active = false,
+    originalSpeed = 16,
+    multiplier = Persist.get("sprint_multiplier", 2),
+    isHolding = false
+}
+
+FeatureRegistry.register("sprint", {
+    name = "SPRINT", 
+    category = "Movimento",
+    defaultEnabled = false,
+    setValue = function(value)
+        MovimentoFeatures.sprint.multiplier = value
+    end
+})
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.LeftShift and FeatureRegistry.isEnabled("sprint") then
+        MovimentoFeatures.sprint.isHolding = true
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            MovimentoFeatures.sprint.originalSpeed = hum.WalkSpeed
+            hum.WalkSpeed = MovimentoFeatures.sprint.originalSpeed * MovimentoFeatures.sprint.multiplier
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.LeftShift and MovimentoFeatures.sprint.isHolding then
+        MovimentoFeatures.sprint.isHolding = false
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            hum.WalkSpeed = MovimentoFeatures.sprint.originalSpeed
+        end
+    end
+end)
+
+-- WalkSpeed
+MovimentoFeatures.walkSpeed = {
+    value = Persist.get("walkspeed_value", 16),
+    protection = Persist.get("walkspeed_protection", false),
+    conn = nil
+}
+
+FeatureRegistry.register("walkspeed", {
+    name = "WALKSPEED",
+    category = "Movimento", 
+    defaultEnabled = false,
+    setValue = function(value)
+        MovimentoFeatures.walkSpeed.value = value
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            hum.WalkSpeed = value
+        end
+    end
+})
+
+FeatureRegistry.register("walkspeed_protection", {
+    name = "WALKSPEED_PROTECTION",
+    category = "Movimento",
+    defaultEnabled = false,
+    onEnable = function()
+        MovimentoFeatures.walkSpeed.protection = true
+        if MovimentoFeatures.walkSpeed.conn then MovimentoFeatures.walkSpeed.conn:Disconnect() end
+        MovimentoFeatures.walkSpeed.conn = RunService.Heartbeat:Connect(function()
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+            if hum and hum.WalkSpeed ~= MovimentoFeatures.walkSpeed.value then
+                hum.WalkSpeed = MovimentoFeatures.walkSpeed.value
+            end
+        end)
+    end,
+    onDisable = function()
+        MovimentoFeatures.walkSpeed.protection = false
+        if MovimentoFeatures.walkSpeed.conn then
+            MovimentoFeatures.walkSpeed.conn:Disconnect()
+            MovimentoFeatures.walkSpeed.conn = nil
+        end
+    end
+})
+
+-- JumpPower/JumpHeight  
+MovimentoFeatures.jump = {
+    value = Persist.get("jump_value", 50)
+}
+
+FeatureRegistry.register("jumppower", {
+    name = "JUMPPOWER",
+    category = "Movimento",
+    defaultEnabled = false,
+    setValue = function(value)
+        MovimentoFeatures.jump.value = value
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            if hum.JumpHeight then
+                hum.JumpHeight = value
+            elseif hum.JumpPower then
+                hum.JumpPower = value
+            end
+        end
+    end
+})
+
+-- High Jump
+MovimentoFeatures.highJump = {
+    cooldown = 0,
+    force = Persist.get("highjump_force", 100)
+}
+
+FeatureRegistry.register("highjump", {
+    name = "HIGHJUMP",
+    category = "Movimento",
+    defaultEnabled = false
+})
+
+function MovimentoFeatures.performHighJump()
+    if time() - MovimentoFeatures.highJump.cooldown < 1 then return end
+    MovimentoFeatures.highJump.cooldown = time()
+    
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
+        bodyVelocity.Velocity = Vector3.new(0, MovimentoFeatures.highJump.force, 0)
+        bodyVelocity.Parent = root
+        
+        task.wait(0.1)
+        bodyVelocity:Destroy()
+    end
+end
+
+-- Gravity
+MovimentoFeatures.gravity = {
+    originalValue = workspace.Gravity,
+    value = Persist.get("gravity_value", 196.2)
+}
+
+FeatureRegistry.register("gravity", {
+    name = "GRAVITY",
+    category = "Movimento",
+    defaultEnabled = false,
+    setValue = function(value)
+        MovimentoFeatures.gravity.value = value
+        if FeatureRegistry.isEnabled("gravity") then
+            workspace.Gravity = value
+        end
+    end,
+    onEnable = function()
+        MovimentoFeatures.gravity.originalValue = workspace.Gravity
+        workspace.Gravity = MovimentoFeatures.gravity.value
+    end,
+    onDisable = function()
+        workspace.Gravity = MovimentoFeatures.gravity.originalValue
+    end
+})
 
 ------------------------------------------------------------
 -- UI
@@ -765,7 +1478,7 @@ function UI.create()
     content.BackgroundTransparency=1
     content.Parent=frame
 
-    -- Coluna esquerda
+    -- Coluna esquerda (category buttons)
     local left = Instance.new("Frame")
     left.Size=UDim2.new(0,scale(120),1,0)
     left.BackgroundColor3=COLORS.BG_LEFT
@@ -778,19 +1491,21 @@ function UI.create()
     list.HorizontalAlignment=Enum.HorizontalAlignment.Center
     list.VerticalAlignment=Enum.VerticalAlignment.Top
 
-    local function makePanelButton(key)
-        local b=Instance.new("TextButton")
-        b.Size=UDim2.new(1,-scale(16),0,scale(34))
-        b.BackgroundColor3=COLORS.BTN
-        b.TextColor3=Color3.new(1,1,1)
-        b.Font=Enum.Font.Gotham
-        b.TextSize=CONFIG.FONT_MAIN_SIZE
-        b.Text=L(key)
-        b.Parent=left
-        styleButton(b,{activeIndicator=function()
-            return UI.PanelButtons[b] == UI.CurrentPanel
-        end})
-        markTrans(b,key)
+    local function makeCategoryButton(categoryName)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, -scale(16), 0, scale(34))
+        b.BackgroundColor3 = COLORS.BTN
+        b.TextColor3 = Color3.new(1,1,1)
+        b.Font = Enum.Font.Gotham
+        b.TextSize = CONFIG.FONT_MAIN_SIZE
+        b.Text = L("CAT_" .. categoryName:upper())
+        b.Parent = left
+        styleButton(b, {
+            activeIndicator = function()
+                return UI.CurrentPanel and UI.PanelButtons[b] == UI.CurrentPanel
+            end
+        })
+        markTrans(b, "CAT_" .. categoryName:upper())
         return b
     end
 
@@ -801,157 +1516,65 @@ function UI.create()
     right.Parent=content
     Instance.new("UICorner",right).CornerRadius=UDim.new(0,10)
 
-    local function newPanel()
-        local p=Instance.new("Frame")
-        p.Size=UDim2.new(1,0,1,0)
-        p.BackgroundTransparency=1
-        p.Visible=false
-        p.Parent=right
-        table.insert(UI.Panels,p)
-        return p
-    end
-
-    local panelFly = newPanel()
-    local panelSpeed = newPanel()
-    local panelIY = newPanel()
-
-    -- Botões de painel
-    local btnFly   = makePanelButton("PANEL_FLY");   UI.PanelButtons[btnFly] = panelFly
-    local btnSpeed = makePanelButton("PANEL_SPEED"); UI.PanelButtons[btnSpeed] = panelSpeed
-    local btnIY    = makePanelButton("PANEL_IY");    UI.PanelButtons[btnIY] = panelIY
-
-    -- Conteúdo Fly
-    do
-        local toggle = Instance.new("TextButton")
-        toggle.Size=UDim2.new(0,scale(140),0,scale(42))
-        toggle.Position=UDim2.new(0,scale(20),0,scale(20))
-        toggle.BackgroundColor3=COLORS.BTN
-        toggle.TextColor3=Color3.new(1,1,1)
-        toggle.Font=Enum.Font.GothamBold
-        toggle.TextSize=CONFIG.FONT_MAIN_SIZE
-        toggle.Text=Fly.active and L("FLY_TOGGLE_ON") or L("FLY_TOGGLE_OFF")
-        toggle.Parent=panelFly
-        styleButton(toggle)
-        UI.Elements.FlyToggle = toggle
-        toggle.MouseButton1Click:Connect(function()
-            Fly.toggle()
-            UI.applyLanguage()
+    local function createCategoryPanel(categoryName)
+        local panel = Instance.new("Frame")
+        panel.Size = UDim2.new(1,0,1,0)
+        panel.BackgroundTransparency = 1
+        panel.Visible = false
+        panel.Parent = right
+        
+        -- Add scrolling frame for content
+        local scrollFrame = Instance.new("ScrollingFrame")
+        scrollFrame.Size = UDim2.new(1, -scale(20), 1, -scale(20))
+        scrollFrame.Position = UDim2.new(0, scale(10), 0, scale(10))
+        scrollFrame.BackgroundTransparency = 1
+        scrollFrame.BorderSizePixel = 0
+        scrollFrame.ScrollBarThickness = 6
+        scrollFrame.ScrollBarImageColor3 = COLORS.ACCENT
+        scrollFrame.CanvasSize = UDim2.new(0,0,0,0)
+        scrollFrame.Parent = panel
+        
+        local layout = Instance.new("UIListLayout", scrollFrame)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Padding = UDim.new(0, scale(8))
+        layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+        
+        -- Update canvas size when content changes
+        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            scrollFrame.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + scale(20))
         end)
-
-        local modeBtn = Instance.new("TextButton")
-        modeBtn.Size=UDim2.new(0,scale(140),0,scale(38))
-        modeBtn.Position=UDim2.new(0,scale(20),0,scale(70))
-        modeBtn.BackgroundColor3=COLORS.BTN
-        modeBtn.TextColor3=Color3.new(1,1,1)
-        modeBtn.Font=Enum.Font.Gotham
-        modeBtn.TextSize=CONFIG.FONT_LABEL_SIZE+1
-        modeBtn.Text = Fly.full3D and L("FLY_MODE_3D_ON") or L("FLY_MODE_3D_OFF")
-        modeBtn.Parent=panelFly
-        UI.Elements.ModeButton = modeBtn
-        styleButton(modeBtn)
-        modeBtn.MouseButton1Click:Connect(function()
-            Fly.setMode(not Fly.full3D)
-            UI.applyLanguage()
-        end)
+        
+        table.insert(UI.Panels, panel)
+        return panel, scrollFrame
     end
 
-    -- Conteúdo Speed
-    do
-        local speedLabel=Instance.new("TextLabel")
-        speedLabel.BackgroundTransparency=1
-        speedLabel.Size=UDim2.new(0,scale(250),0,scale(24))
-        speedLabel.Position=UDim2.new(0,scale(20),0,scale(20))
-        speedLabel.Font=Enum.Font.Gotham
-        speedLabel.TextSize=CONFIG.FONT_LABEL_SIZE+1
-        speedLabel.TextColor3=COLORS.TEXT_DIM
-        speedLabel.Text=L("FLY_SPEED")..": "..Fly.speed
-        speedLabel.TextXAlignment=Enum.TextXAlignment.Left
-        speedLabel.Parent=panelSpeed
-        UI.Elements.SpeedLabel = speedLabel
-        markTrans(speedLabel,"FLY_SPEED")
-
-        local sliderHolder = Instance.new("Frame")
-        sliderHolder.Size=UDim2.new(0,scale(320),0,scale(70))
-        sliderHolder.Position=UDim2.new(0,scale(20),0,scale(56))
-        sliderHolder.BackgroundTransparency=1
-        sliderHolder.Parent=panelSpeed
-
-        createSlider(sliderHolder, CONFIG.FLY_MIN_SPEED, CONFIG.FLY_MAX_SPEED,
-            function() return Fly.speed end,
-            function(v) Fly.setSpeed(v) end)
-    end
-
-    -- Conteúdo IY
-    do
-        local status=Instance.new("TextLabel")
-        status.BackgroundTransparency=1
-        status.Size=UDim2.new(0,scale(220),0,scale(24))
-        status.Position=UDim2.new(0,scale(20),0,scale(20))
-        status.Font=Enum.Font.Gotham
-        status.TextSize=CONFIG.FONT_LABEL_SIZE+1
-        status.TextColor3=COLORS.TEXT_DIM
-        status.Text=_G.__UH_IY_LOADED and "IY: ON" or "IY: OFF"
-        status.TextXAlignment=Enum.TextXAlignment.Left
-        status.Parent=panelIY
-        UI.Elements.IYStatus = status
-
-        local loadBtn=Instance.new("TextButton")
-        loadBtn.Size=UDim2.new(0,scale(160),0,scale(44))
-        loadBtn.Position=UDim2.new(0,scale(20),0,scale(56))
-        loadBtn.Text=L("BTN_IY_LOAD")
-        loadBtn.Font=Enum.Font.GothamBold
-        loadBtn.TextSize=CONFIG.FONT_MAIN_SIZE
-        loadBtn.TextColor3=Color3.new(1,1,1)
-        loadBtn.BackgroundColor3=COLORS.BTN
-        styleButton(loadBtn)
-        loadBtn.Parent=panelIY
-        markTrans(loadBtn,"BTN_IY_LOAD")
-
-        local loading=false
-        loadBtn.MouseButton1Click:Connect(function()
-            if loading then return end
-            if _G.__UH_IY_LOADED then
-                notify("IY", L("IY_ALREADY"))
-                return
-            end
-            loading=true
-            notify("IY", L("IY_LOADING"))
-            task.spawn(function()
-                local ok,err = pcall(function()
-                    local src = game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source")
-                    if #src < 5000 then
-                        error("Source too small / suspicious")
-                    end
-                    loadstring(src)()
-                end)
-                if ok then
-                    _G.__UH_IY_LOADED=true
-                    notify("IY", L("IY_LOADED"))
-                    if UI.Elements.IYStatus then UI.Elements.IYStatus.Text="IY: ON" end
-                else
-                    notify("IY", L("IY_FAILED", tostring(err)))
-                end
-                loading=false
-            end)
+    -- Create panels for each category
+    local categoryPanels = {}
+    local categoryButtons = {}
+    
+    for _, categoryName in ipairs(FeatureRegistry.getAllCategories()) do
+        local panel, scrollFrame = createCategoryPanel(categoryName)
+        local button = makeCategoryButton(categoryName)
+        
+        categoryPanels[categoryName] = { panel = panel, scrollFrame = scrollFrame }
+        categoryButtons[categoryName] = button
+        UI.PanelButtons[button] = panel
+        
+        -- Generate UI for features in this category
+        UI.generateCategoryUI(categoryName, scrollFrame)
+        
+        button.MouseButton1Click:Connect(function()
+            showPanel(panel)
+            highlightPanelButton(button)
         end)
     end
 
-    -- Inicial selecionado
-    showPanel(panelFly)
-    highlightPanelButton(btnFly)
-
-    btnFly.MouseButton1Click:Connect(function()
-        showPanel(panelFly)
-        highlightPanelButton(btnFly)
-    end)
-    btnSpeed.MouseButton1Click:Connect(function()
-        showPanel(panelSpeed)
-        highlightPanelButton(btnSpeed)
-    end)
-    btnIY.MouseButton1Click:Connect(function()
-        showPanel(panelIY)
-        highlightPanelButton(btnIY)
-    end)
+    -- Show first panel by default
+    local firstCategory = FeatureRegistry.getAllCategories()[1]
+    if firstCategory and categoryPanels[firstCategory] then
+        showPanel(categoryPanels[firstCategory].panel)
+        highlightPanelButton(categoryButtons[firstCategory])
+    end
 
     -- Drag janela
     local dragging=false
@@ -1000,6 +1623,146 @@ function UI.create()
     notify("Utility", L("LOADED", VERSION), 3)
 end
 
+-- Function to generate UI for a specific category
+function UI.generateCategoryUI(categoryName, parent)
+    local features = FeatureRegistry.getByCategory(categoryName)
+    local yPos = 0
+    
+    for featureId, feature in pairs(features) do
+        if categoryName == "Movimento" then
+            UI.generateMovimentoUI(featureId, feature, parent, yPos)
+        elseif categoryName == "Teleporte" then
+            UI.generateTeleporteUI(featureId, feature, parent, yPos) 
+        elseif categoryName == "Visual" then
+            UI.generateVisualUI(featureId, feature, parent, yPos)
+        elseif categoryName == "Utilidades" then
+            UI.generateUtilidadesUI(featureId, feature, parent, yPos)
+        elseif categoryName == "Dev" then
+            UI.generateDevUI(featureId, feature, parent, yPos)
+        elseif categoryName == "Scripts" then
+            UI.generateScriptsUI(featureId, feature, parent, yPos)
+        end
+        yPos = yPos + 60 -- Adjust spacing as needed
+    end
+end
+
+-- Category-specific UI generators
+function UI.generateMovimentoUI(featureId, feature, parent, yPos)
+    if featureId == "fly" then
+        -- Custom fly UI
+        local toggle = UIHelpers.createToggle(parent, featureId, 
+            Fly.active and L("FLY_TOGGLE_ON") or L("FLY_TOGGLE_OFF"), 
+            UDim2.new(0, scale(20), 0, yPos))
+        UI.Elements.FlyToggle = toggle
+        
+        local modeBtn = UIHelpers.createButton(parent, 
+            Fly.full3D and L("FLY_MODE_3D_ON") or L("FLY_MODE_3D_OFF"),
+            function()
+                Fly.setMode(not Fly.full3D)
+                UI.applyLanguage()
+            end,
+            UDim2.new(0, scale(170), 0, yPos))
+        UI.Elements.ModeButton = modeBtn
+        
+        -- Speed slider
+        local speedSlider = UIHelpers.createSliderFeature(parent, "fly_speed", 
+            CONFIG.FLY_MIN_SPEED, CONFIG.FLY_MAX_SPEED, 1, 
+            UDim2.new(0, scale(20), 0, yPos + 50))
+            
+    elseif featureId == "sprint" then
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+        UIHelpers.createSliderFeature(parent, "sprint_multiplier", 1.5, 5, 0.1, 
+            UDim2.new(0, scale(170), 0, yPos))
+            
+    elseif featureId == "walkspeed" then
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+        UIHelpers.createSliderFeature(parent, "walkspeed", 16, 200, 1, 
+            UDim2.new(0, scale(170), 0, yPos))
+        UIHelpers.createToggle(parent, "walkspeed_protection", nil, UDim2.new(0, scale(20), 0, yPos + 50))
+        
+    elseif featureId == "jumppower" then
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+        UIHelpers.createSliderFeature(parent, "jump", 50, 200, 1, 
+            UDim2.new(0, scale(170), 0, yPos))
+            
+    elseif featureId == "highjump" then
+        UIHelpers.createButton(parent, L("HIGHJUMP"), function()
+            MovimentoFeatures.performHighJump()
+        end, UDim2.new(0, scale(20), 0, yPos))
+        
+    elseif featureId == "gravity" then
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+        UIHelpers.createSliderFeature(parent, "gravity", 0, 400, 1, 
+            UDim2.new(0, scale(170), 0, yPos))
+            
+    else
+        -- Default toggle for other features
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    end
+end
+
+function UI.generateTeleporteUI(featureId, feature, parent, yPos)
+    -- Placeholder for teleporte features
+    UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+end
+
+function UI.generateVisualUI(featureId, feature, parent, yPos)
+    -- Placeholder for visual features
+    UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+end
+
+function UI.generateUtilidadesUI(featureId, feature, parent, yPos)
+    -- Placeholder for utilidades features
+    UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+end
+
+function UI.generateDevUI(featureId, feature, parent, yPos)
+    -- Placeholder for dev features
+    UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+end
+
+function UI.generateScriptsUI(featureId, feature, parent, yPos)
+    if featureId == "infiniteyield" then
+        -- Custom IY loader UI
+        local status = UIHelpers.createLabel(parent, 
+            _G.__UH_IY_LOADED and "IY: ON" or "IY: OFF",
+            UDim2.new(0, scale(20), 0, yPos))
+        UI.Elements.IYStatus = status
+        
+        local loadBtn = UIHelpers.createButton(parent, L("BTN_IY_LOAD"), function()
+            -- IY loading logic (kept from original)
+            local loading = false
+            if loading then return end
+            if _G.__UH_IY_LOADED then
+                notify("IY", L("IY_ALREADY"))
+                return
+            end
+            loading = true
+            notify("IY", L("IY_LOADING"))
+            task.spawn(function()
+                local ok,err = pcall(function()
+                    local src = game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source")
+                    if #src < 5000 then
+                        error("Source too small / suspicious")
+                    end
+                    loadstring(src)()
+                end)
+                if ok then
+                    _G.__UH_IY_LOADED=true
+                    notify("IY", L("IY_LOADED"))
+                    if UI.Elements.IYStatus then UI.Elements.IYStatus.Text="IY: ON" end
+                else
+                    notify("IY", L("IY_FAILED", tostring(err)))
+                end
+                loading=false
+            end)
+        end, UDim2.new(0, scale(170), 0, yPos))
+        
+    else
+        UIHelpers.createToggle(parent, featureId, nil, UDim2.new(0, scale(20), 0, yPos))
+    end
+end
+
 ------------------------------------------------------------
 -- WATERMARK WATCHER
 ------------------------------------------------------------
@@ -1031,6 +1794,21 @@ end
 ------------------------------------------------------------
 UserInputService.InputBegan:Connect(function(input,gp)
     if gp then return end
+    
+    -- Handle hotkey capture
+    if HotkeyManager._capturing and HotkeyManager._captureCallback then
+        HotkeyManager._captureCallback(input.KeyCode)
+        return
+    end
+    
+    -- Handle bound feature hotkeys
+    local featureId = HotkeyManager._bindings[input.KeyCode]
+    if featureId then
+        FeatureRegistry.toggle(featureId)
+        return
+    end
+    
+    -- Legacy hotkey handling (kept for backward compatibility)
     if input.KeyCode == CONFIG.HOTKEY_TOGGLE_MENU then
         if UI.Screen and not UI.Destroyed then
             UI.Screen.Enabled = not UI.Screen.Enabled
@@ -1041,11 +1819,6 @@ UserInputService.InputBegan:Connect(function(input,gp)
         else
             UI.create()
             if UI.FloatingButton then UI.FloatingButton.Visible=false end
-        end
-    elseif input.KeyCode == CONFIG.HOTKEY_TOGGLE_FLY then
-        Fly.toggle()
-        if UI.Elements.FlyToggle then
-            UI.Elements.FlyToggle.Text = Fly.active and L("FLY_TOGGLE_ON") or L("FLY_TOGGLE_OFF")
         end
     end
 end)
@@ -1101,7 +1874,18 @@ end
 ------------------------------------------------------------
 -- INICIALIZAÇÃO
 ------------------------------------------------------------
+
+-- Register Infinite Yield feature
+FeatureRegistry.register("infiniteyield", {
+    name = "BTN_IY_LOAD",
+    category = "Scripts",
+    defaultEnabled = false
+})
+
 UI.createFloatingButton()
+
+-- Load saved hotkeys after all features are registered
+HotkeyManager.loadSavedHotkeys()
 
 if Lang.current and Lang.data[Lang.current] then
     setLanguage(Lang.current)
@@ -1125,4 +1909,8 @@ _G.__UNIVERSAL_HUB_EXPORTS = {
     Fly = Fly,
     UI = UI,
     Logger = Logger,
+    EventBus = EventBus,
+    FeatureRegistry = FeatureRegistry,
+    HotkeyManager = HotkeyManager,
+    UIHelpers = UIHelpers,
 }
