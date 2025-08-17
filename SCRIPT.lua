@@ -1,4 +1,4 @@
-local VERSION = "0.9.4-mobile"
+local VERSION = "0.8.1-mobile"
 
 -- ==== Serviços ====
 local Players            = game:GetService("Players")
