@@ -1,132 +1,253 @@
-local VERSION = "1.0"
+-- Universal Hub Refatorado
+local VERSION = "1.2.0"
 
--- ===================== CONFIG RÁPIDO =====================
+------------------------------------------------------------
+-- CONFIGURAÇÕES
+------------------------------------------------------------
 local CONFIG = {
-    WINDOW_WIDTH = 480,
-    WINDOW_HEIGHT = 220,
-    TOPBAR_HEIGHT = 30,
+    WINDOW_WIDTH = 520,
+    WINDOW_HEIGHT = 260,
+    TOPBAR_HEIGHT = 32,
     PADDING = 12,
-    UI_SCALE = 1.0,       -- Ajuste global (ex: 0.9 / 1.1)
-    FONT_MAIN_SIZE = 13,
+    UI_SCALE = 1.0,
+    FONT_MAIN_SIZE = 14,
     FONT_LABEL_SIZE = 12,
-    MINI_BUTTON_SIZE = 40,
-    MINI_START_POS = UDim2.new(0,20,0.4,0), -- posição fixa do botão flutuante minimizado
+    MINI_BUTTON_SIZE = 44,
+    MINI_START_POS = UDim2.new(0, 24, 0.4, 0),
+    WATERMARK = "Eduardo854832",
+    ENABLE_WATERMARK_WATCH = true,
+    WATERMARK_CHECK_INTERVAL = {min=2.5,max=3.6},
+    FLY_DEFAULT_SPEED = 50,
+    FLY_MIN_SPEED = 5,
+    FLY_MAX_SPEED = 500,
+    HOTKEY_TOGGLE_MENU = Enum.KeyCode.RightShift,
+    HOTKEY_TOGGLE_FLY  = Enum.KeyCode.F,
 }
 
--- Serviços
-local Players = game:GetService("Players")
+local COLORS = {
+    BG_MAIN = Color3.fromRGB(25,25,32),
+    BG_TOP  = Color3.fromRGB(38,38,50),
+    BG_LEFT = Color3.fromRGB(30,30,40),
+    BG_RIGHT= Color3.fromRGB(32,32,44),
+    BTN     = Color3.fromRGB(52,52,60),
+    BTN_HOVER = Color3.fromRGB(66,66,76),
+    BTN_ACTIVE= Color3.fromRGB(90,140,255),
+    BTN_DANGER= Color3.fromRGB(120,55,55),
+    BTN_MINI  = Color3.fromRGB(40,48,62),
+    ACCENT    = Color3.fromRGB(90,140,255),
+    SLIDER_BG = Color3.fromRGB(60,60,72),
+    SLIDER_FILL=Color3.fromRGB(90,140,255),
+    SLIDER_KNOB= Color3.fromRGB(200,200,220),
+    TEXT_DIM  = Color3.fromRGB(180,180,190),
+    TEXT_SUB  = Color3.fromRGB(150,150,160),
+}
+
+------------------------------------------------------------
+-- SERVIÇOS
+------------------------------------------------------------
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
-local StarterGui = game:GetService("StarterGui")
-local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
+local HttpService      = game:GetService("HttpService")
+local StarterGui       = game:GetService("StarterGui")
+local CoreGui          = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 
-----------------------------------------------------------------
--- Persistência
-----------------------------------------------------------------
+------------------------------------------------------------
+-- UTIL
+------------------------------------------------------------
+local function safeParent(gui)
+    pcall(function()
+        local parent = (gethui and gethui()) or CoreGui
+        gui.Parent = parent
+    end)
+end
+
+local function notify(title,text,dur)
+    pcall(function()
+        StarterGui:SetCore("SendNotification",{Title=title,Text=text,Duration=dur or 3})
+    end)
+end
+
+local function randRange(a,b) return a + math.random()*(b-a) end
+local function scale(n) return n * CONFIG.UI_SCALE end
+
+------------------------------------------------------------
+-- PERSISTÊNCIA
+------------------------------------------------------------
 local Persist = {}
 Persist._fileName = "UniversalUtilityConfig.json"
-Persist._data, Persist._dirty, Persist._lastWrite = {}, false, 0
-Persist._flushInterval = 1
+Persist._data = {}
+Persist._dirty = false
+Persist._lastWrite = 0
+Persist._flushInterval = 2
 local hasFS = (typeof(isfile)=="function" and typeof(readfile)=="function" and typeof(writefile)=="function")
 
 function Persist.load()
     if hasFS and isfile(Persist._fileName) then
-        pcall(function()
-            Persist._data = HttpService:JSONDecode(readfile(Persist._fileName))
+        local ok, decoded = pcall(function()
+            return HttpService:JSONDecode(readfile(Persist._fileName))
         end)
+        if ok and type(decoded)=="table" then
+            Persist._data = decoded
+        end
     end
 end
+
 function Persist.flush(force)
     if not hasFS then return end
-    if not force and (not Persist._dirty or (tick()-Persist._lastWrite)<Persist._flushInterval) then return end
-    Persist._lastWrite, Persist._dirty = tick(), false
-    pcall(function() writefile(Persist._fileName, HttpService:JSONEncode(Persist._data)) end)
+    if not force then
+        if not Persist._dirty then return end
+        if (time() - Persist._lastWrite) < Persist._flushInterval then return end
+    end
+    Persist._lastWrite = time()
+    Persist._dirty = false
+    pcall(function()
+        writefile(Persist._fileName, HttpService:JSONEncode(Persist._data))
+    end)
 end
-function Persist.saveSoon() Persist._dirty = true end
-function Persist.get(k,def)
+
+function Persist.get(k, def)
     local v = Persist._data[k]
-    if v==nil and def~=nil then Persist._data[k]=def; Persist._dirty=true; return def end
+    if v == nil and def ~= nil then
+        Persist._data[k] = def
+        Persist._dirty = true
+        return def
+    end
     return v
 end
-function Persist.setIfChanged(k,v) if Persist._data[k]~=v then Persist._data[k]=v; Persist.saveSoon() end end
-function Persist.set(k,v) Persist._data[k]=v; Persist.saveSoon() end
-Persist.load()
 
-----------------------------------------------------------------
--- Logger
-----------------------------------------------------------------
-local Logger = { _max=120, _lines={}, _dirty=false }
-function Logger.Log(level,msg)
-    local line = os.date("%H:%M:%S").. " ["..level.."] " ..tostring(msg)
-    table.insert(Logger._lines,line)
-    if #Logger._lines>Logger._max then table.remove(Logger._lines,1) end
-    warn("[UU]["..level.."] " ..tostring(msg))
-    Logger._dirty=true
+function Persist.set(k,v)
+    if Persist._data[k] ~= v then
+        Persist._data[k] = v
+        Persist._dirty = true
+    end
 end
 
-----------------------------------------------------------------
--- Traduções mínimas
-----------------------------------------------------------------
+Persist.load()
+
+-- Loop de flush
+task.spawn(function()
+    while true do
+        Persist.flush(false)
+        task.wait(0.5)
+    end
+end)
+
+------------------------------------------------------------
+-- LOGGER
+------------------------------------------------------------
+local Logger = { _max = 200, _lines = {} }
+function Logger.Log(level, msg)
+    local line = os.date("%H:%M:%S").." ["..level.."] "..tostring(msg)
+    table.insert(Logger._lines, line)
+    if #Logger._lines > Logger._max then table.remove(Logger._lines,1) end
+    warn("[UniversalHub]["..level.."] ",tostring(msg))
+end
+
+------------------------------------------------------------
+-- I18N
+------------------------------------------------------------
 local Lang = {}
 Lang.data = {
     pt = {
-        UI_TITLE="",
+        UI_TITLE="Universal Hub v%s",
         MINI_HANDLE="≡",
         MINI_TIP="Arraste",
-        LANG_CHANGED="Idioma alterado.",
+        LANG_SELECT_TITLE="Selecione o Idioma",
+        LANG_PT="Português",
+        LANG_EN="English",
         LOADED="Carregado v%s",
         FLY_ENABLED="Voo on (vel=%d)",
         FLY_DISABLED="Voo off",
         FLY_SPEED_SET="Velocidade de voo = %d",
         FLY_ERR_NO_ROOT="HumanoidRootPart não encontrado.",
+        FLY_SPEED="Velocidade",
+        FLY_TOGGLE_ON="Desligar",
+        FLY_TOGGLE_OFF="Ligar",
+        PANEL_FLY="Voo",
+        PANEL_SPEED="Velocidade",
+        PANEL_IY="IY",
+        BTN_IY_LOAD="Carregar IY",
         IY_LOADING="Carregando IY...",
         IY_LOADED="IY carregado.",
         IY_ALREADY="Já carregado.",
         IY_FAILED="Falha: %s",
-        FLY_TOGGLE_ON="Off",
-        FLY_TOGGLE_OFF="On",
-        FLY_SPEED="Vel",
-        BTN_IY_LOAD="IY",
-        SLIDER_HINT="Arraste ou digite",
-        LANG_SELECT_PT="Português",
-        LANG_SELECT_EN="English",
-        LANG_SELECT_TITLE="Selecione o Idioma"
+        SLIDER_HINT="Arraste ou digite valor",
+        BTN_CLOSE="Fechar",
+        BTN_MINIMIZE="Minimizar",
+        BTN_RESTORE="Restaurar",
+        MENU_TOGGLED="Menu alternado",
+        HOTKEY_FLY="Tecla F: alterna voo",
+        HOTKEY_MENU="RightShift: abre/fecha menu",
+        WATERMARK_ALERT="Watermark alterada ou removida.",
+        FLY_ON_RESPAWN="Reaplicando voo após respawn...",
+        CLOSE_INFO="Interface destruída. Use o script novamente para reabrir.",
+        POSITION_SAVED="Posição salva",
+        FLOAT_TIP="Clique para abrir",
+        SPEED_INPUT_INVALID="Valor inválido",
     },
     en = {
-        UI_TITLE="",
+        UI_TITLE="Universal Hub v%s",
         MINI_HANDLE="≡",
         MINI_TIP="Drag",
-        LANG_CHANGED="Language changed.",
+        LANG_SELECT_TITLE="Select Language",
+        LANG_PT="Português",
+        LANG_EN="English",
         LOADED="Loaded v%s",
         FLY_ENABLED="Fly on (speed=%d)",
         FLY_DISABLED="Fly off",
         FLY_SPEED_SET="Fly speed = %d",
         FLY_ERR_NO_ROOT="HumanoidRootPart not found.",
+        FLY_SPEED="Speed",
+        FLY_TOGGLE_ON="Disable",
+        FLY_TOGGLE_OFF="Enable",
+        PANEL_FLY="Fly",
+        PANEL_SPEED="Speed",
+        PANEL_IY="IY",
+        BTN_IY_LOAD="Load IY",
         IY_LOADING="Loading IY...",
         IY_LOADED="IY loaded.",
         IY_ALREADY="Already loaded.",
         IY_FAILED="Failed: %s",
-        FLY_TOGGLE_ON="Off",
-        FLY_TOGGLE_OFF="On",
-        FLY_SPEED="Spd",
-        BTN_IY_LOAD="IY",
-        SLIDER_HINT="Drag or type",
-        LANG_SELECT_PT="Português",
-        LANG_SELECT_EN="English",
-        LANG_SELECT_TITLE="Select Language"
+        SLIDER_HINT="Drag or type value",
+        BTN_CLOSE="Close",
+        BTN_MINIMIZE="Minimize",
+        BTN_RESTORE="Restore",
+        MENU_TOGGLED="Menu toggled",
+        HOTKEY_FLY="Key F: toggle fly",
+        HOTKEY_MENU="RightShift: toggle menu",
+        WATERMARK_ALERT="Watermark removed or changed.",
+        FLY_ON_RESPAWN="Re-enabling fly after respawn...",
+        CLOSE_INFO="UI destroyed. Re-run script to open again.",
+        POSITION_SAVED="Position saved",
+        FLOAT_TIP="Click to open",
+        SPEED_INPUT_INVALID="Invalid value",
     }
 }
-Lang.current = nil -- força seleção sempre
-local _missingLogged = {}
-local function L(k,...)
-    local pack=Lang.data[Lang.current or "pt"]
-    local s=(pack and pack[k]) or k
-    if s==k and not _missingLogged[k] then
-        _missingLogged[k]=true
-        Logger.Log("I18N","Missing key: " ..k)
+
+Lang.current = Persist.get("lang", nil)
+local missingKeys = {}
+local activePack = Lang.current and Lang.data[Lang.current] or nil
+
+local function setLanguage(code)
+    if Lang.data[code] then
+        Lang.current = code
+        activePack = Lang.data[code]
+        Persist.set("lang", code)
+    end
+end
+if not activePack then
+    -- Somente definimos depois que o usuário escolher
+end
+
+local function L(key, ...)
+    local pack = activePack or Lang.data.en
+    local s = pack[key] or Lang.data.en[key] or key
+    if (not pack[key] and not Lang.data.en[key] and not missingKeys[key]) then
+        missingKeys[key] = true
+        Logger.Log("I18N","Missing key: "..key)
     end
     if select("#",...)>0 then
         return string.format(s,...)
@@ -134,272 +255,334 @@ local function L(k,...)
     return s
 end
 
-----------------------------------------------------------------
--- Util
-----------------------------------------------------------------
-local function notify(t,x,d) pcall(function() StarterGui:SetCore("SendNotification",{Title=t,Text=x,Duration=d or 3}) end) end
-
-----------------------------------------------------------------
--- Fly Controller (analógico + câmera)
-----------------------------------------------------------------
+------------------------------------------------------------
+-- FLY CONTROLLER
+------------------------------------------------------------
 local Fly = {
-    active=false,
-    speed=Persist.get("fly_speed",50),
-    conn=nil
+    active = false,
+    speed = tonumber(Persist.get("fly_speed", CONFIG.FLY_DEFAULT_SPEED)) or CONFIG.FLY_DEFAULT_SPEED,
+    conn  = nil,
+    debounceToggle = 0.15,
+    lastToggle = 0,
 }
+
 local function getRoot()
-    local char=LocalPlayer.Character
+    local char = LocalPlayer.Character
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 local function getHum()
     local char=LocalPlayer.Character
     return char and char:FindFirstChildWhichIsA("Humanoid")
 end
-local function computeDirection3D(hum,cam)
+
+local function computeDirection(hum,cam)
     local move = hum.MoveDirection
-    if move.Magnitude==0 then
-        return Vector3.zero
-    end
-    local camForward = cam.CFrame.LookVector
-    local flatForward = Vector3.new(camForward.X,0,camForward.Z)
-    if flatForward.Magnitude < 1e-6 then
-        flatForward = Vector3.new(0,0,-1)
-    else
-        flatForward = flatForward.Unit
-    end
-    local camRight = cam.CFrame.RightVector
-    camRight = Vector3.new(camRight.X,0,camRight.Z).Unit
-    local xInput = move:Dot(camRight)
-    local zInput = move:Dot(flatForward)
-    local dir = (camRight * xInput) + (camForward * zInput)
-    if dir.Magnitude > 0 then dir = dir.Unit end
-    return dir
+    if move.Magnitude == 0 then return Vector3.zero end
+    local cf = cam.CFrame
+    local forward = Vector3.new(cf.LookVector.X,0,cf.LookVector.Z).Unit
+    local right   = Vector3.new(cf.RightVector.X,0,cf.RightVector.Z).Unit
+    local x = move:Dot(right)
+    local z = move:Dot(forward)
+    local dir = (right * x) + (forward * z)
+    return dir.Magnitude>0 and dir.Unit or Vector3.zero
 end
+
+function Fly.setSpeed(n)
+    n = tonumber(n)
+    if not n then return end
+    n = math.clamp(math.floor(n+0.5), CONFIG.FLY_MIN_SPEED, CONFIG.FLY_MAX_SPEED)
+    Fly.speed = n
+    Persist.set("fly_speed", n)
+    notify("Fly", L("FLY_SPEED_SET", n))
+end
+
 function Fly.enable()
     if Fly.active then return end
-    local root=getRoot()
-    if not root then notify("Fly", L("FLY_ERR_NO_ROOT")); return end
-    Fly.active=true
+    local root = getRoot()
+    if not root then
+        notify("Fly", L("FLY_ERR_NO_ROOT"))
+        return
+    end
+    Fly.active = true
     if Fly.conn then Fly.conn:Disconnect() end
-    Fly.conn=RunService.Heartbeat:Connect(function()
+    Fly.conn = RunService.Heartbeat:Connect(function()
         if not Fly.active then return end
-        local r=getRoot(); if not r then return end
-        local hum=getHum(); if not hum then return end
-        local cam=workspace.CurrentCamera; if not cam then return end
-        local dir=computeDirection3D(hum,cam)
-        if dir.Magnitude==0 then
-            r.Velocity=Vector3.zero
+        local r = getRoot(); if not r then return end
+        local hum = getHum(); if not hum then return end
+        local cam = workspace.CurrentCamera; if not cam then return end
+        local dir = computeDirection(hum, cam)
+        local vel = dir * Fly.speed
+        if dir.Magnitude == 0 then vel = Vector3.zero end
+        if r.AssemblyLinearVelocity then
+            r.AssemblyLinearVelocity = Vector3.new(vel.X, vel.Y, vel.Z)
         else
-            r.Velocity=dir*Fly.speed
+            r.Velocity = vel
         end
     end)
     notify("Fly", L("FLY_ENABLED", Fly.speed))
 end
+
 function Fly.disable()
     if not Fly.active then return end
     Fly.active=false
     if Fly.conn then Fly.conn:Disconnect(); Fly.conn=nil end
-    local root=getRoot(); if root then root.Velocity=Vector3.zero end
+    local r=getRoot()
+    if r then
+        if r.AssemblyLinearVelocity then
+            r.AssemblyLinearVelocity = Vector3.zero
+        else
+            r.Velocity = Vector3.zero
+        end
+    end
     notify("Fly", L("FLY_DISABLED"))
 end
-function Fly.setSpeed(n)
-    Fly.speed=math.clamp(n,5,500)
-    Persist.setIfChanged("fly_speed",Fly.speed)
-    notify("Fly", L("FLY_SPEED_SET", Fly.speed))
+
+function Fly.toggle()
+    local now = time()
+    if now - Fly.lastToggle < Fly.debounceToggle then return end
+    Fly.lastToggle = now
+    if Fly.active then Fly.disable() else Fly.enable() end
 end
 
-----------------------------------------------------------------
+LocalPlayer.CharacterAdded:Connect(function()
+    if Fly.active then
+        notify("Fly", L("FLY_ON_RESPAWN"))
+        task.wait(1)
+        Fly.enable()
+    end
+end)
+
+------------------------------------------------------------
 -- UI
-----------------------------------------------------------------
-local UI={}
-UI._translatables={}
-local function mark(inst,key,...)
-    table.insert(UI._translatables,{instance=inst,key=key,args={...}})
-end
-local function scale(n) return n * CONFIG.UI_SCALE end
+------------------------------------------------------------
+local UI = {
+    Screen = nil,
+    FloatingGui = nil,
+    FloatingButton = nil,
+    Panels = {},
+    CurrentPanel = nil,
+    Translatables = {},
+    Elements = {},
+    Destroyed = false,
+    PanelButtons = {},
+}
 
-local function styleButton(btn)
-    btn.AutoButtonColor=false
-    btn.TextColor3=Color3.new(1,1,1)
-    btn.Font=Enum.Font.Gotham
-    btn.TextSize=CONFIG.FONT_MAIN_SIZE
-    btn.BackgroundColor3=Color3.fromRGB(50,50,62)
-    Instance.new("UICorner",btn).CornerRadius=UDim.new(0,5)
+local function markTrans(instance,key,...)
+    table.insert(UI.Translatables,{instance=instance,key=key,args={...}})
 end
 
 function UI.applyLanguage()
-    if not Lang.current then return end
-    for _,d in ipairs(UI._translatables) do
+    if not activePack then return end
+    for _,d in ipairs(UI.Translatables) do
         local inst=d.instance
         if inst and inst.Parent and (inst:IsA("TextLabel") or inst:IsA("TextButton")) then
-            local txt=(d.args and #d.args>0) and L(d.key,table.unpack(d.args)) or L(d.key)
-            inst.Text=txt
+            local txt = (#d.args>0) and L(d.key, table.unpack(d.args)) or L(d.key)
+            inst.Text = txt
         end
     end
-    if UI.FlyToggle then
-        UI.FlyToggle.Text = Fly.active and L("FLY_TOGGLE_ON") or L("FLY_TOGGLE_OFF")
+    if UI.Elements.Title then UI.Elements.Title.Text = L("UI_TITLE", VERSION) end
+    if UI.Elements.FlyToggle then
+        UI.Elements.FlyToggle.Text = Fly.active and L("FLY_TOGGLE_ON") or L("FLY_TOGGLE_OFF")
     end
-    if UI.SpeedLabel then
-        UI.SpeedLabel.Text = L("FLY_SPEED")..": "..Fly.speed
+    if UI.Elements.SpeedLabel then
+        UI.Elements.SpeedLabel.Text = L("FLY_SPEED")..": "..Fly.speed
     end
-    if UI.IYLoadBtn then UI.IYLoadBtn.Text = L("BTN_IY_LOAD") end
-    if UI.SliderHint then UI.SliderHint.Text = L("SLIDER_HINT") end
+    if UI.Elements.SliderHint then
+        UI.Elements.SliderHint.Text = L("SLIDER_HINT")
+    end
 end
 
-----------------------------------------------------------------
--- Watermark enforcement
-----------------------------------------------------------------
-local WATERMARK="Eduardo854832"
-local function killAll(msg)
-    pcall(function() Fly.disable() end)
-    if UI and UI.Screen then pcall(function() UI.Screen:Destroy() end) end
-    error(msg or "Watermark removed.")
-end
-local function startWatermarkEnforcer()
-    task.spawn(function()
-        while true do
-            if not UI or not UI.WatermarkLabel or not UI.WatermarkLabel.Parent or UI.WatermarkLabel.Text~=WATERMARK then
-                killAll("Watermark missing/altered")
-                break
-            end
-            task.wait(2 + math.random()*0.8)
+local function styleButton(btn, opts)
+    btn.AutoButtonColor = false
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = CONFIG.FONT_MAIN_SIZE
+    btn.BackgroundColor3 = COLORS.BTN
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,6)
+    corner.Parent = btn
+    if opts and opts.danger then
+        btn.BackgroundColor3 = COLORS.BTN_DANGER
+    end
+    btn.MouseEnter:Connect(function()
+        if not (opts and opts.activeIndicator) then
+            btn.BackgroundColor3 = COLORS.BTN_HOVER
+        end
+    end)
+    btn.MouseLeave:Connect(function()
+        if opts and opts.activeIndicator and opts.activeIndicator()==true then
+            btn.BackgroundColor3 = COLORS.BTN_ACTIVE
+        else
+            btn.BackgroundColor3 = opts and opts.danger and COLORS.BTN_DANGER or COLORS.BTN
         end
     end)
 end
 
-----------------------------------------------------------------
--- Slider helper
-----------------------------------------------------------------
-local function createSlider(parent,minVal,maxVal,getVal,setVal)
-    local frame=Instance.new("Frame")
-    frame.Size=UDim2.new(0,scale(260),0,scale(42))
-    frame.BackgroundTransparency=1
-    frame.Parent=parent
+local function highlightPanelButton(activeBtn)
+    for btn,data in pairs(UI.PanelButtons) do
+        if btn == activeBtn then
+            btn.BackgroundColor3 = COLORS.BTN_ACTIVE
+        else
+            btn.BackgroundColor3 = COLORS.BTN
+        end
+    end
+end
 
-    local barBg=Instance.new("Frame")
-    barBg.Size=UDim2.new(0,scale(150),0,scale(8))
-    barBg.Position=UDim2.new(0,0,0,scale(6))
-    barBg.BackgroundColor3=Color3.fromRGB(60,60,72)
-    barBg.Parent=frame
-    Instance.new("UICorner",barBg).CornerRadius=UDim.new(0,4)
+local function showPanel(panel)
+    UI.CurrentPanel = panel
+    for _,p in pairs(UI.Panels) do
+        p.Visible = (p == panel)
+    end
+end
 
-    local fill=Instance.new("Frame")
-    fill.BackgroundColor3=Color3.fromRGB(90,140,255)
-    fill.Size=UDim2.new(0,0,1,0)
-    fill.Parent=barBg
-    Instance.new("UICorner",fill).CornerRadius=UDim.new(0,4)
+-- Slider genérico
+local function createSlider(parent, minVal, maxVal, getVal, setVal)
+    local holder = Instance.new("Frame")
+    holder.Size = UDim2.new(0, scale(300), 0, scale(60))
+    holder.BackgroundTransparency = 1
+    holder.Parent = parent
 
-    local knob=Instance.new("Frame")
-    knob.Size=UDim2.new(0,scale(12),0,scale(12))
-    knob.AnchorPoint=Vector2.new(0.5,0.5)
-    knob.Position=UDim2.new(0,0,0.5,0)
-    knob.BackgroundColor3=Color3.fromRGB(200,200,220)
-    knob.Parent=barBg
-    Instance.new("UICorner",knob).CornerRadius=UDim.new(1,0)
+    local barBg = Instance.new("Frame")
+    barBg.Size = UDim2.new(0, scale(170), 0, scale(10))
+    barBg.Position = UDim2.new(0, 0, 0, scale(8))
+    barBg.BackgroundColor3 = COLORS.SLIDER_BG
+    barBg.Parent = holder
+    Instance.new("UICorner",barBg).CornerRadius = UDim.new(0,5)
 
-    local box=Instance.new("TextBox")
-    box.Size=UDim2.new(0,scale(90),0,scale(22))
-    box.Position=UDim2.new(0,scale(170),0,scale(-2))
-    box.BackgroundColor3=Color3.fromRGB(55,55,70)
-    box.TextColor3=Color3.new(1,1,1)
-    box.Font=Enum.Font.Code
-    box.TextSize=CONFIG.FONT_LABEL_SIZE
-    box.PlaceholderText=tostring(getVal())
-    box.Text=""
-    box.Parent=frame
-    Instance.new("UICorner",box).CornerRadius=UDim.new(0,5)
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(0,0,1,0)
+    fill.BackgroundColor3 = COLORS.SLIDER_FILL
+    fill.Parent = barBg
+    Instance.new("UICorner",fill).CornerRadius = UDim.new(0,5)
 
-    local hint=Instance.new("TextLabel")
-    hint.BackgroundTransparency=1
-    hint.Size=UDim2.new(1,0,0,scale(16))
-    hint.Position=UDim2.new(0,0,0,scale(22))
-    hint.Font=Enum.Font.Gotham
-    hint.TextSize=CONFIG.FONT_LABEL_SIZE-1
-    hint.TextColor3=Color3.fromRGB(160,160,170)
-    hint.Text=""
-    hint.TextXAlignment=Enum.TextXAlignment.Left
-    hint.Parent=frame
-    UI.SliderHint=hint
-    mark(hint,"SLIDER_HINT")
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, scale(14), 0, scale(14))
+    knob.AnchorPoint = Vector2.new(0.5,0.5)
+    knob.Position = UDim2.new(0,0,0.5,0)
+    knob.BackgroundColor3 = COLORS.SLIDER_KNOB
+    knob.Parent = barBg
+    Instance.new("UICorner",knob).CornerRadius = UDim.new(1,0)
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0, scale(100), 0, scale(26))
+    box.Position = UDim2.new(0, scale(190), 0, scale(-2))
+    box.BackgroundColor3 = COLORS.BTN
+    box.TextColor3 = Color3.new(1,1,1)
+    box.Font = Enum.Font.Code
+    box.TextSize = CONFIG.FONT_LABEL_SIZE
+    box.PlaceholderText = tostring(getVal())
+    box.Text = ""
+    box.ClearTextOnFocus = false
+    box.Parent = holder
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,6)
+
+    local hint = Instance.new("TextLabel")
+    hint.BackgroundTransparency = 1
+    hint.Size = UDim2.new(1,0,0, scale(18))
+    hint.Position = UDim2.new(0,0,0, scale(28))
+    hint.Font = Enum.Font.Gotham
+    hint.TextSize = CONFIG.FONT_LABEL_SIZE
+    hint.TextColor3 = COLORS.TEXT_SUB
+    hint.Text = ""
+    hint.TextXAlignment = Enum.TextXAlignment.Left
+    hint.Parent = holder
+    UI.Elements.SliderHint = hint
+    markTrans(hint,"SLIDER_HINT")
 
     local function refresh()
-        local v=getVal()
-        local alpha=(v-minVal)/(maxVal-minVal)
-        fill.Size=UDim2.new(alpha,0,1,0)
-        knob.Position=UDim2.new(alpha,0,0.5,0)
-        box.PlaceholderText=tostring(v)
-        if UI.SpeedLabel then
-            UI.SpeedLabel.Text=L("FLY_SPEED")..": "..v
+        local v = getVal()
+        local alpha = (v - minVal)/(maxVal - minVal)
+        alpha = math.clamp(alpha,0,1)
+        fill.Size = UDim2.new(alpha,0,1,0)
+        knob.Position = UDim2.new(alpha,0,0.5,0)
+        box.PlaceholderText = tostring(v)
+        if UI.Elements.SpeedLabel then
+            UI.Elements.SpeedLabel.Text = L("FLY_SPEED")..": "..v
         end
     end
     refresh()
 
-    local dragging=false
-    local function setFromX(px)
-        local rel=(px-barBg.AbsolutePosition.X)/barBg.AbsoluteSize.X
-        rel=math.clamp(rel,0,1)
-        local val=math.floor(minVal+rel*(maxVal-minVal)+0.5)
+    local dragging = false
+    local function setFromInput(px)
+        local rel = (px - barBg.AbsolutePosition.X)/barBg.AbsoluteSize.X
+        rel = math.clamp(rel,0,1)
+        local val = math.floor(minVal + rel*(maxVal-minVal) + 0.5)
         setVal(val)
         refresh()
     end
+
     barBg.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-            dragging=true
-            setFromX(i.Position.X)
+            dragging = true
+            setFromInput(i.Position.X)
         end
     end)
     barBg.InputEnded:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-            dragging=false
+            dragging = false
         end
     end)
     barBg.InputChanged:Connect(function(i)
         if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
-            setFromX(i.Position.X)
+            setFromInput(i.Position.X)
         end
     end)
+
     box.FocusLost:Connect(function(enter)
         if enter then
-            local n=tonumber(box.Text)
-            if n then
-                n=math.clamp(math.floor(n+0.5),minVal,maxVal)
-                setVal(n)
+            local num = tonumber(box.Text)
+            if num then
+                num = math.clamp(math.floor(num+0.5), minVal, maxVal)
+                setVal(num)
+            else
+                notify("Speed", L("SPEED_INPUT_INVALID"))
             end
             box.Text=""
             refresh()
         end
     end)
-    return frame
+
+    return holder
 end
 
-----------------------------------------------------------------
--- Botão flutuante minimizado (criado antes para já ter posição fixa)
-----------------------------------------------------------------
-local FloatingButton=nil
-local function createFloatingButton()
-    local sg=Instance.new("ScreenGui")
-    sg.Name="UU_FloatBtn"
+-- Botão flutuante
+function UI.createFloatingButton()
+    if UI.FloatingGui then UI.FloatingGui:Destroy() end
+    local sg = Instance.new("ScreenGui")
+    sg.Name="UH_Float"
     sg.ResetOnSpawn=false
-    pcall(function() sg.Parent=(gethui and gethui()) or CoreGui end)
+    safeParent(sg)
+    UI.FloatingGui = sg
 
-    local btn=Instance.new("TextButton")
-    btn.Name="OpenBtn"
-    btn.Size=UDim2.new(0,scale(CONFIG.MINI_BUTTON_SIZE),0,scale(CONFIG.MINI_BUTTON_SIZE))
-    btn.Position=CONFIG.MINI_START_POS
-    btn.AnchorPoint=Vector2.new(0,0)
-    btn.BackgroundColor3=Color3.fromRGB(40,48,62)
-    btn.TextColor3=Color3.new(1,1,1)
-    btn.Font=Enum.Font.GothamBold
-    btn.TextSize=math.floor(CONFIG.FONT_MAIN_SIZE+2)
-    btn.Text=L("MINI_HANDLE")
-    btn.Parent=sg
-    Instance.new("UICorner",btn).CornerRadius=UDim.new(0,8)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, scale(CONFIG.MINI_BUTTON_SIZE), 0, scale(CONFIG.MINI_BUTTON_SIZE))
+    local savedPos = Persist.get("float_pos", nil)
+    if savedPos and type(savedPos)=="table" and savedPos.x and savedPos.y then
+        btn.Position = UDim2.new(0, savedPos.x, 0, savedPos.y)
+    else
+        btn.Position = CONFIG.MINI_START_POS
+    end
+    btn.BackgroundColor3 = COLORS.BTN_MINI
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = math.floor(CONFIG.FONT_MAIN_SIZE+4)
+    btn.Text = L("MINI_HANDLE")
+    btn.Parent = sg
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,10)
+    btn.AutoButtonColor=false
+    btn.Visible = false
+    btn.MouseEnter:Connect(function() btn.BackgroundColor3 = COLORS.BTN_HOVER end)
+    btn.MouseLeave:Connect(function() btn.BackgroundColor3 = COLORS.BTN_MINI end)
+
+    UI.FloatingButton = btn
 
     local dragging=false
-    local dragStart,startPos
-    local function update(input)
-        local delta=input.Position-dragStart
-        btn.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
+    local dragStart, startPos
+    local function updatePos(input)
+        local delta = input.Position - dragStart
+        local newX = startPos.X.Offset + delta.X
+        local newY = startPos.Y.Offset + delta.Y
+        btn.Position = UDim2.new(0,newX,0,newY)
     end
     btn.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
@@ -407,245 +590,302 @@ local function createFloatingButton()
             dragStart=i.Position
             startPos=btn.Position
             i.Changed:Connect(function(s)
-                if s==Enum.UserInputState.End then dragging=false end
+                if s==Enum.UserInputState.End then
+                    dragging=false
+                    Persist.set("float_pos",{x=btn.Position.X.Offset, y=btn.Position.Y.Offset})
+                    notify("UI", L("POSITION_SAVED"), 2)
+                end
             end)
         end
     end)
     btn.InputChanged:Connect(function(i)
-        if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType.UserInputType.Touch) then
-            update(i)
+        if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
+            updatePos(i)
         end
     end)
-    FloatingButton=btn
-    return btn
+
+    btn.MouseButton1Click:Connect(function()
+        if UI.Screen and not UI.Destroyed then
+            UI.Screen.Enabled = true
+            btn.Visible = false
+        end
+    end)
 end
 
-----------------------------------------------------------------
--- UI principal
-----------------------------------------------------------------
+-- Criação da UI principal
 function UI.create()
-    local sg=Instance.new("ScreenGui")
-    sg.Name="UU_Main"
+    if UI.Screen and UI.Screen.Parent then
+        UI.Screen:Destroy()
+    end
+    UI.Destroyed=false
+
+    local sg = Instance.new("ScreenGui")
+    sg.Name="UH_Main"
     sg.ResetOnSpawn=false
-    pcall(function() sg.Parent=(gethui and gethui()) or CoreGui end)
+    safeParent(sg)
     UI.Screen=sg
 
-    local frame=Instance.new("Frame")
+    local frame = Instance.new("Frame")
     frame.Size=UDim2.new(0,scale(CONFIG.WINDOW_WIDTH),0,scale(CONFIG.WINDOW_HEIGHT))
-    frame.Position=UDim2.new(0.5,-scale(CONFIG.WINDOW_WIDTH)/2,0.45,-scale(CONFIG.WINDOW_HEIGHT)/2)
-    frame.BackgroundColor3=Color3.fromRGB(25,25,32)
+    frame.Position=UDim2.new(0.5, -scale(CONFIG.WINDOW_WIDTH)/2, 0.45, -scale(CONFIG.WINDOW_HEIGHT)/2)
+    frame.BackgroundColor3 = COLORS.BG_MAIN
     frame.Parent=sg
-    UI.Frame=frame
-    Instance.new("UICorner",frame).CornerRadius=UDim.new(0,10)
+    UI.Frame = frame
+    Instance.new("UICorner",frame).CornerRadius=UDim.new(0,12)
 
-    local top=Instance.new("Frame")
-    top.Size=UDim2.new(1,0,0,scale(CONFIG.TOPBAR_HEIGHT))
-    top.BackgroundColor3=Color3.fromRGB(38,38,50)
-    top.Parent=frame
-    Instance.new("UICorner",top).CornerRadius=UDim.new(0,10)
+    local top = Instance.new("Frame")
+    top.Size = UDim2.new(1,0,0,scale(CONFIG.TOPBAR_HEIGHT))
+    top.BackgroundColor3 = COLORS.BG_TOP
+    top.Parent = frame
+    Instance.new("UICorner",top).CornerRadius = UDim.new(0,12)
 
-    local title=Instance.new("TextLabel")
+    local title = Instance.new("TextLabel")
     title.BackgroundTransparency=1
-    title.Size=UDim2.new(0.5,0,1,0)
+    title.Size=UDim2.new(0.6,0,1,0)
     title.Position=UDim2.new(0,scale(CONFIG.PADDING),0,0)
     title.Font=Enum.Font.GothamBold
-    title.TextSize=CONFIG.FONT_MAIN_SIZE
+    title.TextSize=CONFIG.FONT_MAIN_SIZE+1
     title.TextColor3=Color3.new(1,1,1)
-    title.Text=L("UI_TITLE",VERSION)
+    title.Text=L("UI_TITLE", VERSION)
     title.TextXAlignment=Enum.TextXAlignment.Left
     title.Parent=top
-    UI.Title=title
-    mark(title,"UI_TITLE",VERSION)
+    UI.Elements.Title=title
+    markTrans(title,"UI_TITLE",VERSION)
 
-    -- Watermark ao lado
-    local wm=Instance.new("TextLabel")
-    wm.BackgroundTransparency=1
-    wm.Font=Enum.Font.GothamBold
-    wm.TextSize=CONFIG.FONT_MAIN_SIZE
-    wm.TextColor3=Color3.fromRGB(255,255,255)
-    wm.TextStrokeTransparency=0.5
-    wm.Text=WATERMARK
-    wm.Size=UDim2.new(0,150,1,0)
-    wm.AnchorPoint=Vector2.new(1,0)
-    wm.Position=UDim2.new(1,-scale(100),0,0)
-    wm.TextXAlignment=Enum.TextXAlignment.Right
-    wm.Parent=top
-    UI.WatermarkLabel=wm
+    local watermark = Instance.new("TextLabel")
+    watermark.BackgroundTransparency=1
+    watermark.Font=Enum.Font.GothamBold
+    watermark.TextSize=CONFIG.FONT_MAIN_SIZE
+    watermark.TextColor3=Color3.fromRGB(255,255,255)
+    watermark.TextStrokeTransparency=0.5
+    watermark.Text=CONFIG.WATERMARK
+    watermark.Size=UDim2.new(0,170,1,0)
+    watermark.AnchorPoint=Vector2.new(1,0)
+    watermark.Position=UDim2.new(1,-scale(150),0,0)
+    watermark.TextXAlignment=Enum.TextXAlignment.Right
+    watermark.Parent=top
+    UI.Elements.WatermarkLabel = watermark
 
-    local closeX=Instance.new("TextButton")
-    closeX.Size=UDim2.new(0,scale(28),0,scale(CONFIG.TOPBAR_HEIGHT-10))
-    closeX.Position=UDim2.new(1,-scale(32),0,scale(5))
-    closeX.Text="X"
-    closeX.Font=Enum.Font.GothamBold
-    closeX.TextSize=CONFIG.FONT_MAIN_SIZE
-    closeX.BackgroundColor3=Color3.fromRGB(90,50,50)
-    closeX.TextColor3=Color3.new(1,1,1)
-    closeX.Parent=top
-    Instance.new("UICorner",closeX).CornerRadius=UDim.new(0,6)
+    local btnClose = Instance.new("TextButton")
+    btnClose.Size=UDim2.new(0,scale(60),0,scale(CONFIG.TOPBAR_HEIGHT-8))
+    btnClose.Position=UDim2.new(1,-scale(64),0,scale(4))
+    btnClose.Text=L("BTN_CLOSE")
+    btnClose.Font=Enum.Font.GothamBold
+    btnClose.TextSize=CONFIG.FONT_LABEL_SIZE+1
+    btnClose.BackgroundColor3=COLORS.BTN_DANGER
+    btnClose.TextColor3=Color3.new(1,1,1)
+    btnClose.Parent=top
+    styleButton(btnClose,{danger=true})
+    markTrans(btnClose,"BTN_CLOSE")
 
-    local minimize=Instance.new("TextButton")
-    minimize.Size=UDim2.new(0,scale(28),0,scale(CONFIG.TOPBAR_HEIGHT-10))
-    minimize.Position=UDim2.new(1,-scale(64),0,scale(5))
-    minimize.Text="–"
-    minimize.Font=Enum.Font.GothamBold
-    minimize.TextSize=CONFIG.FONT_MAIN_SIZE
-    minimize.BackgroundColor3=Color3.fromRGB(60,60,70)
-    minimize.TextColor3=Color3.new(1,1,1)
-    minimize.Parent=top
-    Instance.new("UICorner",minimize).CornerRadius=UDim.new(0,6)
+    local btnMinimize = Instance.new("TextButton")
+    btnMinimize.Size=UDim2.new(0,scale(80),0,scale(CONFIG.TOPBAR_HEIGHT-8))
+    btnMinimize.Position=UDim2.new(1,-scale(64+86),0,scale(4))
+    btnMinimize.Text=L("BTN_MINIMIZE")
+    btnMinimize.Font=Enum.Font.GothamBold
+    btnMinimize.TextSize=CONFIG.FONT_LABEL_SIZE
+    btnMinimize.BackgroundColor3=COLORS.BTN
+    btnMinimize.TextColor3=Color3.new(1,1,1)
+    btnMinimize.Parent=top
+    styleButton(btnMinimize)
+    markTrans(btnMinimize,"BTN_MINIMIZE")
 
-    local content=Instance.new("Frame")
+    local content = Instance.new("Frame")
     content.Size=UDim2.new(1,0,1,-scale(CONFIG.TOPBAR_HEIGHT))
     content.Position=UDim2.new(0,0,0,scale(CONFIG.TOPBAR_HEIGHT))
     content.BackgroundTransparency=1
     content.Parent=frame
 
-    -- Coluna esquerda (botões)
-    local left=Instance.new("Frame")
-    left.Size=UDim2.new(0,scale(110),1,0)
-    left.BackgroundColor3=Color3.fromRGB(30,30,40)
+    -- Coluna esquerda
+    local left = Instance.new("Frame")
+    left.Size=UDim2.new(0,scale(120),1,0)
+    left.BackgroundColor3=COLORS.BG_LEFT
     left.Parent=content
-    Instance.new("UICorner",left).CornerRadius=UDim.new(0,8)
+    Instance.new("UICorner",left).CornerRadius=UDim.new(0,10)
 
-    local list=Instance.new("UIListLayout",left)
+    local list = Instance.new("UIListLayout", left)
     list.SortOrder=Enum.SortOrder.LayoutOrder
     list.Padding=UDim.new(0,scale(6))
     list.HorizontalAlignment=Enum.HorizontalAlignment.Center
-    list.VerticalAlignment=Enum.VerticalAlignment.Top -- fixed invalid enum (Start -> Top)
+    list.VerticalAlignment=Enum.VerticalAlignment.Top
 
-    local function makeSmallBtn(txt)
+    local function makePanelButton(key)
         local b=Instance.new("TextButton")
-        b.Size=UDim2.new(1,-scale(14),0,scale(30))
-        b.BackgroundColor3=Color3.fromRGB(52,52,60)
+        b.Size=UDim2.new(1,-scale(16),0,scale(34))
+        b.BackgroundColor3=COLORS.BTN
         b.TextColor3=Color3.new(1,1,1)
         b.Font=Enum.Font.Gotham
         b.TextSize=CONFIG.FONT_MAIN_SIZE
-        b.Text=txt
+        b.Text=L(key)
         b.Parent=left
-        Instance.new("UICorner",b).CornerRadius=UDim.new(0,6)
+        styleButton(b,{activeIndicator=function()
+            return UI.PanelButtons[b] == UI.CurrentPanel
+        end})
+        markTrans(b,key)
         return b
     end
 
-    local btnFly=makeSmallBtn("Fly")
-    local btnSpeed=makeSmallBtn("Speed")
-    local btnIY=makeSmallBtn("IY")
-
-    -- Área direita (painéis)
-    local right=Instance.new("Frame")
-    right.Size=UDim2.new(1,-scale(120),1,0)
-    right.Position=UDim2.new(0,scale(120),0,0)
-    right.BackgroundColor3=Color3.fromRGB(32,32,44)
+    local right = Instance.new("Frame")
+    right.Size=UDim2.new(1,-scale(132),1,0)
+    right.Position=UDim2.new(0,scale(132),0,0)
+    right.BackgroundColor3=COLORS.BG_RIGHT
     right.Parent=content
-    Instance.new("UICorner",right).CornerRadius=UDim.new(0,8)
+    Instance.new("UICorner",right).CornerRadius=UDim.new(0,10)
 
-    local panels={}
     local function newPanel()
         local p=Instance.new("Frame")
         p.Size=UDim2.new(1,0,1,0)
         p.BackgroundTransparency=1
         p.Visible=false
         p.Parent=right
-        panels[#panels+1]=p
+        table.insert(UI.Panels,p)
         return p
     end
-    local panelFly=newPanel()
-    local panelSpeed=newPanel()
-    local panelIY=newPanel()
 
-    local function showPanel(p)
-        for _,pp in ipairs(panels) do pp.Visible=(pp==p) end
-    end
+    local panelFly = newPanel()
+    local panelSpeed = newPanel()
+    local panelIY = newPanel()
+
+    -- Botões de painel
+    local btnFly   = makePanelButton("PANEL_FLY");   UI.PanelButtons[btnFly] = panelFly
+    local btnSpeed = makePanelButton("PANEL_SPEED"); UI.PanelButtons[btnSpeed] = panelSpeed
+    local btnIY    = makePanelButton("PANEL_IY");    UI.PanelButtons[btnIY] = panelIY
 
     -- Conteúdo Fly
     do
-        local toggle=Instance.new("TextButton")
-        toggle.Size=UDim2.new(0,scale(110),0,scale(34))
-        toggle.Position=UDim2.new(0,scale(14),0,scale(14))
-        styleButton(toggle)
+        local toggle = Instance.new("TextButton")
+        toggle.Size=UDim2.new(0,scale(140),0,scale(42))
+        toggle.Position=UDim2.new(0,scale(20),0,scale(20))
+        toggle.BackgroundColor3=COLORS.BTN
+        toggle.TextColor3=Color3.new(1,1,1)
+        toggle.Font=Enum.Font.GothamBold
+        toggle.TextSize=CONFIG.FONT_MAIN_SIZE
         toggle.Text=Fly.active and L("FLY_TOGGLE_ON") or L("FLY_TOGGLE_OFF")
         toggle.Parent=panelFly
-        UI.FlyToggle=toggle
+        styleButton(toggle)
+        UI.Elements.FlyToggle = toggle
         toggle.MouseButton1Click:Connect(function()
-            if Fly.active then Fly.disable() else Fly.enable() end
+            Fly.toggle()
             UI.applyLanguage()
         end)
+
+        local infoHotkeys = Instance.new("TextLabel")
+        infoHotkeys.BackgroundTransparency=1
+        infoHotkeys.Size=UDim2.new(1,-scale(20),0,scale(36))
+        infoHotkeys.Position=UDim2.new(0,scale(20),0,scale(70))
+        infoHotkeys.Font=Enum.Font.Gotham
+        infoHotkeys.TextSize=CONFIG.FONT_LABEL_SIZE
+        infoHotkeys.TextColor3=COLORS.TEXT_SUB
+        infoHotkeys.Text = L("HOTKEY_FLY").." | "..L("HOTKEY_MENU")
+        infoHotkeys.TextWrapped=true
+        infoHotkeys.TextXAlignment=Enum.TextXAlignment.Left
+        infoHotkeys.Parent=panelFly
+        markTrans(infoHotkeys,"HOTKEY_FLY")
     end
 
     -- Conteúdo Speed
     do
         local speedLabel=Instance.new("TextLabel")
         speedLabel.BackgroundTransparency=1
-        speedLabel.Size=UDim2.new(0,scale(180),0,scale(20))
-        speedLabel.Position=UDim2.new(0,scale(14),0,scale(14))
+        speedLabel.Size=UDim2.new(0,scale(250),0,scale(24))
+        speedLabel.Position=UDim2.new(0,scale(20),0,scale(20))
         speedLabel.Font=Enum.Font.Gotham
-        speedLabel.TextSize=CONFIG.FONT_LABEL_SIZE
-        speedLabel.TextColor3=Color3.fromRGB(200,200,210)
+        speedLabel.TextSize=CONFIG.FONT_LABEL_SIZE+1
+        speedLabel.TextColor3=COLORS.TEXT_DIM
         speedLabel.Text=L("FLY_SPEED")..": "..Fly.speed
         speedLabel.TextXAlignment=Enum.TextXAlignment.Left
         speedLabel.Parent=panelSpeed
-        UI.SpeedLabel=speedLabel
-        mark(speedLabel,"FLY_SPEED")
+        UI.Elements.SpeedLabel = speedLabel
+        markTrans(speedLabel,"FLY_SPEED")
 
-        local sliderHolder=Instance.new("Frame")
-        sliderHolder.Size=UDim2.new(0,scale(260),0,scale(50))
-        sliderHolder.Position=UDim2.new(0,scale(14),0,scale(40))
+        local sliderHolder = Instance.new("Frame")
+        sliderHolder.Size=UDim2.new(0,scale(320),0,scale(70))
+        sliderHolder.Position=UDim2.new(0,scale(20),0,scale(56))
         sliderHolder.BackgroundTransparency=1
         sliderHolder.Parent=panelSpeed
-        createSlider(sliderHolder,5,500,function() return Fly.speed end,function(v) Fly.setSpeed(v) end)
+
+        createSlider(sliderHolder, CONFIG.FLY_MIN_SPEED, CONFIG.FLY_MAX_SPEED,
+            function() return Fly.speed end,
+            function(v) Fly.setSpeed(v) end)
     end
 
     -- Conteúdo IY
     do
         local status=Instance.new("TextLabel")
         status.BackgroundTransparency=1
-        status.Size=UDim2.new(0,scale(120),0,scale(20))
-        status.Position=UDim2.new(0,scale(14),0,scale(14))
+        status.Size=UDim2.new(0,scale(220),0,scale(24))
+        status.Position=UDim2.new(0,scale(20),0,scale(20))
         status.Font=Enum.Font.Gotham
-        status.TextSize=CONFIG.FONT_LABEL_SIZE
-        status.TextColor3=Color3.fromRGB(200,200,210)
-        status.Text=_G.__IY_LOADED and "IY: ON" or "IY: OFF"
+        status.TextSize=CONFIG.FONT_LABEL_SIZE+1
+        status.TextColor3=COLORS.TEXT_DIM
+        status.Text=_G.__UH_IY_LOADED and "IY: ON" or "IY: OFF"
         status.TextXAlignment=Enum.TextXAlignment.Left
         status.Parent=panelIY
-        UI.IYStatus=status
+        UI.Elements.IYStatus = status
 
         local loadBtn=Instance.new("TextButton")
-        loadBtn.Size=UDim2.new(0,scale(110),0,scale(34))
-        loadBtn.Position=UDim2.new(0,scale(14),0,scale(40))
-        styleButton(loadBtn)
+        loadBtn.Size=UDim2.new(0,scale(160),0,scale(44))
+        loadBtn.Position=UDim2.new(0,scale(20),0,scale(56))
         loadBtn.Text=L("BTN_IY_LOAD")
+        loadBtn.Font=Enum.Font.GothamBold
+        loadBtn.TextSize=CONFIG.FONT_MAIN_SIZE
+        loadBtn.TextColor3=Color3.new(1,1,1)
+        loadBtn.BackgroundColor3=COLORS.BTN
+        styleButton(loadBtn)
         loadBtn.Parent=panelIY
-        UI.IYLoadBtn=loadBtn
-        mark(loadBtn,"BTN_IY_LOAD")
+        markTrans(loadBtn,"BTN_IY_LOAD")
+
+        local loading=false
         loadBtn.MouseButton1Click:Connect(function()
-            if _G.__IY_LOADED then
+            if loading then return end
+            if _G.__UH_IY_LOADED then
                 notify("IY", L("IY_ALREADY"))
                 return
             end
+            loading=true
             notify("IY", L("IY_LOADING"))
-            local ok,err=pcall(function()
-                loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+            task.spawn(function()
+                local ok,err = pcall(function()
+                    local src = game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source")
+                    if #src < 5000 then
+                        error("Source too small / suspicious")
+                    end
+                    loadstring(src)()
+                end)
+                if ok then
+                    _G.__UH_IY_LOADED=true
+                    notify("IY", L("IY_LOADED"))
+                    if UI.Elements.IYStatus then UI.Elements.IYStatus.Text="IY: ON" end
+                else
+                    notify("IY", L("IY_FAILED", tostring(err)))
+                end
+                loading=false
             end)
-            if ok then
-                _G.__IY_LOADED=true
-                notify("IY", L("IY_LOADED"))
-                if UI.IYStatus then UI.IYStatus.Text="IY: ON" end
-            else
-                notify("IY", L("IY_FAILED",tostring(err)))
-            end
         end)
     end
 
-    -- Ações dos botões laterais
-    btnFly.MouseButton1Click:Connect(function() showPanel(panelFly) end)
-    btnSpeed.MouseButton1Click:Connect(function() showPanel(panelSpeed) end)
-    btnIY.MouseButton1Click:Connect(function() showPanel(panelIY) end)
+    -- Inicial selecionado
     showPanel(panelFly)
+    highlightPanelButton(btnFly)
+
+    btnFly.MouseButton1Click:Connect(function()
+        showPanel(panelFly)
+        highlightPanelButton(btnFly)
+    end)
+    btnSpeed.MouseButton1Click:Connect(function()
+        showPanel(panelSpeed)
+        highlightPanelButton(btnSpeed)
+    end)
+    btnIY.MouseButton1Click:Connect(function()
+        showPanel(panelIY)
+        highlightPanelButton(btnIY)
+    end)
 
     -- Drag janela
     local dragging=false
     local dragStart,startPos
     local function updateWindow(input)
-        local delta=input.Position-dragStart
+        local delta=input.Position - dragStart
         frame.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
     end
     top.InputBegan:Connect(function(i)
@@ -659,95 +899,161 @@ function UI.create()
         end
     end)
     top.InputChanged:Connect(function(i)
-        if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType.UserInputType.Touch) then
+        if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
             updateWindow(i)
         end
     end)
 
-    minimize.MouseButton1Click:Connect(function()
-        frame.Visible=false
-        if FloatingButton then FloatingButton.Visible=true end
-    end)
-    closeX.MouseButton1Click:Connect(function()
-        frame.Visible=false
-        if FloatingButton then FloatingButton.Visible=true end
+    -- Minimizar
+    btnMinimize.MouseButton1Click:Connect(function()
+        if UI.FloatingButton then
+            UI.FloatingButton.Visible=true
+        end
+        UI.Screen.Enabled=false
     end)
 
-    if FloatingButton then
-        FloatingButton.MouseButton1Click:Connect(function()
-            frame.Visible=true
-            FloatingButton.Visible=false
-        end)
-    end
+    -- Fechar (destrói)
+    btnClose.MouseButton1Click:Connect(function()
+        UI.Destroyed=true
+        if UI.Screen then
+            UI.Screen:Destroy()
+        end
+        if UI.FloatingButton then
+            UI.FloatingButton.Visible=true
+        end
+        notify("UI", L("CLOSE_INFO"))
+    end)
 
     UI.applyLanguage()
-    startWatermarkEnforcer()
+    notify("Utility", L("LOADED", VERSION), 3)
 end
 
-----------------------------------------------------------------
--- Seleção de idioma
-----------------------------------------------------------------
+------------------------------------------------------------
+-- WATERMARK WATCHER
+------------------------------------------------------------
+local function startWatermarkEnforcer()
+    if not CONFIG.ENABLE_WATERMARK_WATCH then return end
+    task.spawn(function()
+        task.wait(1.2) -- tolerância inicial
+        while UI.Screen and not UI.Destroyed do
+            local ok=true
+            if not UI.Elements.WatermarkLabel or not UI.Elements.WatermarkLabel.Parent then
+                ok=false
+            else
+                if UI.Elements.WatermarkLabel.Text ~= CONFIG.WATERMARK then
+                    ok=false
+                end
+            end
+            if not ok then
+                notify("Security", L("WATERMARK_ALERT"))
+                Logger.Log("SEC","Watermark changed or removed.")
+                break
+            end
+            task.wait(randRange(CONFIG.WATERMARK_CHECK_INTERVAL.min, CONFIG.WATERMARK_CHECK_INTERVAL.max))
+        end
+    end)
+end
+
+------------------------------------------------------------
+-- HOTKEYS
+------------------------------------------------------------
+UserInputService.InputBegan:Connect(function(input,gp)
+    if gp then return end
+    if input.KeyCode == CONFIG.HOTKEY_TOGGLE_MENU then
+        if UI.Screen and not UI.Destroyed then
+            UI.Screen.Enabled = not UI.Screen.Enabled
+            if UI.FloatingButton then
+                UI.FloatingButton.Visible = not UI.Screen.Enabled
+            end
+            notify("UI", L("MENU_TOGGLED"),1.5)
+        else
+            -- Se destruída, recria
+            UI.create()
+            if UI.FloatingButton then UI.FloatingButton.Visible=false end
+        end
+    elseif input.KeyCode == CONFIG.HOTKEY_TOGGLE_FLY then
+        Fly.toggle()
+        if UI.Elements.FlyToggle then
+            UI.Elements.FlyToggle.Text = Fly.active and L("FLY_TOGGLE_ON") or L("FLY_TOGGLE_OFF")
+        end
+    end
+end)
+
+------------------------------------------------------------
+-- SELEÇÃO DE IDIOMA INICIAL
+------------------------------------------------------------
 local function showLanguageSelect(onChosen)
-    local sg=Instance.new("ScreenGui")
-    sg.Name="UU_LangSelectInitial"
+    local sg = Instance.new("ScreenGui")
+    sg.Name="UH_LanguageSelect"
     sg.ResetOnSpawn=false
-    pcall(function() sg.Parent=(gethui and gethui()) or CoreGui end)
+    safeParent(sg)
 
     local frame=Instance.new("Frame")
-    frame.Size=UDim2.new(0,300,0,160)
-    frame.Position=UDim2.new(0.5,-150,0.5,-80)
-    frame.BackgroundColor3=Color3.fromRGB(25,25,35)
+    frame.Size=UDim2.new(0,360,0,180)
+    frame.Position=UDim2.new(0.5,-180,0.5,-90)
+    frame.BackgroundColor3=COLORS.BG_MAIN
     frame.Parent=sg
-    Instance.new("UICorner",frame).CornerRadius=UDim.new(0,12)
+    Instance.new("UICorner",frame).CornerRadius=UDim.new(0,14)
 
     local title=Instance.new("TextLabel")
     title.BackgroundTransparency=1
-    title.Size=UDim2.new(1,0,0,46)
+    title.Size=UDim2.new(1,0,0,48)
     title.Font=Enum.Font.GothamBold
+    title.TextSize=20
     title.TextColor3=Color3.new(1,1,1)
-    title.TextSize=18
-    title.Text="Select / Selecione"
+    title.Text=L("LANG_SELECT_TITLE")
     title.Parent=frame
 
-    local function mk(txt,x,code)
+    local function mk(btnText, offsetX, code)
         local b=Instance.new("TextButton")
-        b.Size=UDim2.new(0.5,-30,0,54)
-        b.Position=UDim2.new(x,20,0,80)
-        b.BackgroundColor3=Color3.fromRGB(40,60,90)
+        b.Size=UDim2.new(0.5,-40,0,58)
+        b.Position=UDim2.new(offsetX,20,0,90)
+        b.BackgroundColor3=COLORS.BTN
         b.TextColor3=Color3.new(1,1,1)
         b.TextSize=18
         b.Font=Enum.Font.GothamBold
-        b.Text=txt
+        b.Text=btnText
         b.Parent=frame
-        Instance.new("UICorner",b).CornerRadius=UDim.new(0,12)
+        local c=Instance.new("UICorner"); c.CornerRadius=UDim.new(0,12); c.Parent=b
+        b.MouseEnter:Connect(function() b.BackgroundColor3=COLORS.BTN_HOVER end)
+        b.MouseLeave:Connect(function() b.BackgroundColor3=COLORS.BTN end)
         b.MouseButton1Click:Connect(function()
-            Lang.current=code
-            Persist.set("lang",code)
+            setLanguage(code)
             sg:Destroy()
             if onChosen then onChosen() end
         end)
     end
-    mk("Português",0,"pt")
-    mk("English",0.5,"en")
+    mk(L("LANG_PT"),0,"pt")
+    mk(L("LANG_EN"),0.5,"en")
 end
 
-----------------------------------------------------------------
--- Inicialização
-----------------------------------------------------------------
-createFloatingButton()  -- cria botão flutuante antes (fica visível quando menu fechado)
-if FloatingButton then FloatingButton.Visible=false end
+------------------------------------------------------------
+-- INICIALIZAÇÃO
+------------------------------------------------------------
+-- Cria sempre o botão flutuante
+UI.createFloatingButton()
 
-showLanguageSelect(function()
+-- Se idioma já escolhido, cria UI direto; senão faz seleção
+if Lang.current and Lang.data[Lang.current] then
+    setLanguage(Lang.current)
     UI.create()
-    notify("Utility", L("LOADED", VERSION), 3)
-end)
+    if UI.FloatingButton then UI.FloatingButton.Visible=false end
+else
+    showLanguageSelect(function()
+        UI.create()
+        if UI.FloatingButton then UI.FloatingButton.Visible=false end
+    end)
+end
 
--- Flush periódico
-task.spawn(function()
-    while true do
-        Persist.flush(false)
-        task.wait(0.5)
-    end
-end)
+startWatermarkEnforcer()
 
-return { VERSION=VERSION, Persist=Persist, Lang=Lang, UI=UI, Logger=Logger, Fly=Fly }
+-- Retorno público
+return {
+    VERSION = VERSION,
+    CONFIG = CONFIG,
+    Persist = Persist,
+    Lang = Lang,
+    Fly = Fly,
+    UI = UI,
+    Logger = Logger,
+}
