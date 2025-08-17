@@ -1,4 +1,4 @@
-local VERSION = "0.10.0-ui"
+local VERSION = "1.0"
 
 -- Serviços
 local Players = game:GetService("Players")
