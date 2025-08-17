@@ -509,7 +509,7 @@ function UI.create()
     list.SortOrder=Enum.SortOrder.LayoutOrder
     list.Padding=UDim.new(0,scale(6))
     list.HorizontalAlignment=Enum.HorizontalAlignment.Center
-    list.VerticalAlignment=Enum.VerticalAlignment.Start
+    list.VerticalAlignment=Enum.VerticalAlignment.Top -- fixed invalid enum (Start -> Top)
 
     local function makeSmallBtn(txt)
         local b=Instance.new("TextButton")
