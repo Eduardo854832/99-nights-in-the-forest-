@@ -1,6 +1,3 @@
--- Universal Hub with Runtime Language Selection (Português / English)
--- Coloque em StarterPlayerScripts (LocalScript)
-
 --------------------------------------------------
 -- Language System (Runtime selection overlay)
 --------------------------------------------------
