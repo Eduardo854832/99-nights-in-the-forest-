@@ -1,6 +1,3 @@
--- UNIVERSAL HUB MELHORADO (Loading + Tradução inicial + UI + Fly SUAVE + Players avançado)
--- LocalScript para StarterGui
-
 --// Serviços
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
