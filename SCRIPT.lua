@@ -1,6 +1,3 @@
--- UNIVERSAL HUB (v3) - Tela de carregamento + Tradução inicial + UI + Fly GUI flutuante + Players avançado
--- LocalScript para StarterGui
-
 --// Serviços
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
