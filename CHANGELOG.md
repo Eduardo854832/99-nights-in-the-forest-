@@ -1,72 +1,52 @@
-# BREAKHUB - Registro de Atualizações (Changelog)
+# BREAKHUB Changelog
 
-## Versão 0.1.1 (2025-09-01)
-Data: 2025-09-01
-Responsável: @Eduardo854832
+Todas as mudanças notáveis deste projeto serão documentadas aqui.
+O formato segue (simplificado) o padrão Keep a Changelog, com seções: Added (Adicionado), Fixed (Corrigido), Removed (Removido).
 
-### Resumo
-Atualização focada em correções de erros, otimizações de desempenho e plena compatibilidade com dispositivos mobile. Também foi adicionado um botão flutuante para abertura/fechamento rápido do hub e criado um sistema de escalonamento automático da interface (UIScale) conforme o tamanho da tela.
+Versão atual do hub: BREAKHUB-V0.2
 
-### Principais Mudanças
-1. Correção de Erros
-   - Removido o uso de `collectgarbage("collect")` dentro da rotina de "manipulação de memória" que disparava o erro: `collectgarbage must be called with 'count'; use gcinfo() instead`.
-   - Eliminadas rotinas agressivas (flood de eventos e criação/destruição rápida de Parts invisíveis) que poderiam gerar lag e warnings.
-   - Adicionada função utilitária `safe()` (wrapper pcall) para capturar e reportar erros sem quebrar loops principais.
-   - Comentado no código que o warning `Infinite yield possible on 'Workspace.CountdownTimer:WaitForChild("CountdownSign")'` não pertence ao BREAKHUB e como evitar problemas semelhantes usando timeout em `WaitForChild`.
+## [0.2.0] - 2025-09-01
+Tag: BREAKHUB-V0.2
 
-2. Compatibilidade Mobile
-   - Conversão de boa parte de tamanhos fixos (offset) para valores relativos (Scale) quando apropriado.
-   - Adicionado `UIScale` dinâmico no seletor de idioma e no hub principal: escala calculada pelo menor lado do viewport (viewport adaptativo para telas pequenas).
-   - Aumentadas áreas clicáveis, alturas e uso de `TextScaled` em botões e labels principais para melhor leitura em telas menores.
-   - Sliders redesenhados para suportar input de toque (touch) além de mouse, sem depender exclusivamente de `GetMouseLocation()`.
-   - Sistema de drag (arrastar janela) atualizado para não permitir que o hub saia completamente da tela (clamping após soltar).
-   - Botão flutuante "BH" adicionado para abrir/fechar o hub facilmente em mobile sem ocupar muito espaço.
+### Added (Adicionado)
+- Escalonamento dinâmico (UIScale) baseado no menor lado do viewport para Language Selector e Hub principal (melhor leitura em telas pequenas).
+- Botão flutuante "BH" para abrir/fechar o hub rapidamente em dispositivos mobile sem ocupar espaço permanente.
+- Sistema de drag com clamp (impede que a janela saia totalmente da tela ao soltar).
+- Sliders compatíveis com toque (touch) além de mouse; cálculo de valor sem depender apenas de `GetMouseLocation()`.
+- ScrollFrame para lista de abas (permite expansão futura sem quebrar layout em telas pequenas).
+- Wrapper utilitário `safe()` (pcall padronizado) para capturar erros e evitar que loops críticos sejam interrompidos.
+- Notificações animadas com Tween (entrada e saída suaves) ao carregar o hub.
+- Títulos e botões principais usando `TextScaled` para responsividade tipográfica.
+- Comentários explicativos sobre o warning externo de `Infinite yield possible` e instrução de uso de timeout em `WaitForChild`.
 
-3. UI / UX
-   - Layout das abas convertido para ScrollFrame (permite expansão futura sem estourar a altura em telas menores).
-   - Ordem das abas simplificada inicialmente (Auto Farm, Combat, Settings) — outras podem ser reintroduzidas posteriormente.
-   - Notificações de carregamento agora usam Tween para entrada/saída suave e desaparecem automaticamente.
-   - Títulos das seções usam `GothamBold` com `TextScaled` para legibilidade.
+### Fixed (Corrigido)
+- Erro: `collectgarbage must be called with 'count'; use gcinfo() instead` gerado pela rotina antiga de manipulação de memória (removida / reescrita).
+- Potenciais quedas de desempenho causadas por loops agressivos (flood de eventos, criação e destruição massiva de Parts invisíveis, alocações de blocos de memória artificiais).
+- Responsividade de interface em dispositivos mobile (tamanhos fixos substituídos parcialmente por escalas e TextScaled, melhorando leitura e clique).
+- Possível spam de warnings ao tentar desabilitar scripts que não são LocalScripts (abordagem agora apenas reporta via `warn`).
+- Slider anterior que dependia somente de movimento de mouse (inoperante em toque) agora funcional em touch.
 
-4. Bypass / Segurança (Tornado para modo "leve")
-   - Removido o "flood" de RemoteEvents/Functions e a geração massiva de Partes invisíveis.
-   - Bypass agora realiza apenas pequenas variações aleatórias (WalkSpeed, JumpPower) em intervalos moderados para parecer comportamento humano, reduzindo risco de detecção e queda de FPS.
-   - Rotina de variação de Lighting simplificada (incremento suave no `ClockTime`).
-   - Detecção de scripts suspeitos passou a apenas reportar (warn) em LocalScripts, sem tentar desabilitar scripts server-side (evita warnings adicionais e falhas).
+### Removed (Removido)
+- Rotina de "manipulação de memória avançada" que gerava chamadas repetidas a `collectgarbage` e uso artificial de GUIDs.
+- Flood de RemoteEvents/RemoteFunctions/BindableEvents que aumentava risco de detecção e lag.
+- Criação periódica de grupos de Parts invisíveis para ruído (desnecessário e custoso em performance).
+- Tentativa direta de desabilitar scripts de suposto anti-cheat (substituído por simples detecção e aviso).
+- Variações pesadas e muito frequentes de propriedades no ambiente (ex.: latitude aleatória e grande variação de ClockTime).
 
-5. Estrutura e Organização
-   - Separação clara das funções placeholder (executeKillAura, collectResources, etc.) no final do arquivo para implementação futura.
-   - Criação de função utilitária `safe()` centraliza o padrão de pcall + warn.
-   - Comentários adicionais marcados com `-- MOBILE COMPAT` e notas de instrução sobre warnings externos.
+## [0.1.1] - 2025-09-01 (Consolidada em 0.2.0)
+Versão intermediária utilizada como base de reestruturação. As mudanças introduzidas foram reorganizadas e oficializadas na versão 0.2.0.
 
-6. Performance
-   - Redução de loops intensivos em spawn/while com sleeps aleatórios muito curtos.
-   - Menos alocações temporárias (remoção de blocos de memória artificiais) diminuindo garbage e ruído.
-
-7. Acessibilidade / Qualidade de Vida
-   - Uso consistente de `TextScaled` em botões principais e títulos.
-   - Melhor contraste de cores em botões ativos/inativos.
-   - Feedback visual claro em toggles (cores sólidas azul x cinza).
-
-### Arquitetura Atual (Visão Rápida)
-- LanguageSelector GUI (com UIScale adaptativo)
-- Hub principal (ScreenGui BREAKHUB_V01) com:
-  - TopBar (drag + close)
-  - TabsContainer (ScrollingFrame)
-  - ContentContainer (UIListLayout dinâmico)
-  - Botão flutuante (ScreenGui separado) para abertura rápida
-- Sistemas lógicos (AutoFarm, KillAura, etc.) ainda com placeholders prontos para implementação posterior.
-
-### Próximos Passos Sugeridos
-- Implementar lógica real nas funções placeholder (ex.: pathfinding, coleta seletiva, priorização de recursos).
-- Persistência de configurações (salvar toggles/valores em JSON local ou via setclipboard).
-- Adicionar mais abas antigas (Quests, Building, Inventory, Stats) já adaptadas para a nova arquitetura mobile.
-- Sistema de relatório de sessão (tempo, recursos/hora, kills/hora) exibido na aba Stats.
-- Internacionalização adicional (Espanhol, Francês) usando mesmo dicionário de traduções.
-
-### Avisos
-- Este hub não resolve warnings de scripts terceiros; apenas mitiga o que era gerado internamente.
-- Evite reintroduzir rotinas de spam de rede; isso pode aumentar chance de detecção.
+### Notas Históricas
+- Introdução inicial dos ajustes mobile e remoções de rotinas agressivas.
+- Reestruturação do layout da GUI e introdução do botão flutuante (conceito).
 
 ---
-Se precisar inserir outra versão ou detalhar commits individuais, basta solicitar.
+Próximos Passos Sugeridos (não implementados ainda)
+- Persistência de configurações (salvar / carregar toggles e sliders em JSON local).
+- Reintrodução e adaptação das demais abas (Quests, Building, Inventory, Stats, Navigation, etc.).
+- Sistema de estatísticas em tempo real (Recursos/hora, Kills/hora, Árvores/hora) na aba Stats.
+- Suporte adicional de idiomas (Espanhol, Inglês completo já incluído; potencial para Francês, etc.).
+- Módulo separado (ModuleScript) para lógica reutilizável (AutoFarm / KillAura / Utilidades).
+
+---
+Observação: O warning `Infinite yield possible` mostrado no console provém de outro script do jogo (ex.: `UpdateEffectsClient`) e não está ligado ao BREAKHUB. Para evitar warnings semelhantes internamente, utilizar `:WaitForChild("Nome", 5)` com timeout e fallback.
